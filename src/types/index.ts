@@ -112,6 +112,7 @@ export interface AuthUser {
   employee: Employee
   role: Role
   location: Location | null
+  isSuperAdmin: boolean
 }
 
 export type DeliveryDateStatus = 'today' | 'tomorrow' | 'this_week' | 'future' | 'overdue' | null

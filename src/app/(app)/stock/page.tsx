@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/lib/auth-context'
 import Header from '@/components/layout/Header'
@@ -15,6 +16,7 @@ import DeliveryModal from '@/components/delivery/DeliveryModal'
 
 export default function StockPage() {
   const { isManager, locationName } = useAuth()
+  const router = useRouter()
   const [allData, setAllData] = useState<StockWithDelivery[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -54,16 +56,18 @@ export default function StockPage() {
     const locs = [...new Set(enriched.map(r => r.current_location).filter(Boolean))] as string[]
     setLocations(locs.sort())
 
-    // Technicians/drivers only see their own location by default
-    if (!isManager && locationName && locFilter === 'ALL') {
-      setLocFilter(locationName)
-    }
-
     setAllData(enriched)
     setLoading(false)
   }
 
   useEffect(() => { load() }, [])
+
+  // Auto-lock location for non-managers once locationName is available
+  useEffect(() => {
+    if (!isManager && locationName && locFilter === 'ALL') {
+      setLocFilter(locationName)
+    }
+  }, [isManager, locationName])
 
   const filtered = useMemo(() => {
     let data = allData
@@ -197,7 +201,10 @@ export default function StockPage() {
                   </tr>
                 ) : (
                   filtered.map(row => (
-                    <tr key={row.chassis_no}>
+                    <tr key={row.chassis_no}
+                      onClick={() => router.push(`/stock/${encodeURIComponent(row.chassis_no)}`)}
+                      className="cursor-pointer"
+                    >
                       <td>
                         <span className="font-mono text-xs font-semibold text-brand-600">
                           {row.chassis_no}
@@ -243,6 +250,7 @@ export default function StockPage() {
                             <CalendarPlus size={14} />
                           </button>
                           <button
+                            onClick={(e) => { e.stopPropagation(); router.push(`/qc?chassis=${encodeURIComponent(row.chassis_no)}`) }}
                             title="QC Form"
                             className="p-1.5 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-colors"
                           >

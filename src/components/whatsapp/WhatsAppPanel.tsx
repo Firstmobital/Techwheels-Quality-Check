@@ -5,6 +5,7 @@ import { X, MessageCircle, Send } from 'lucide-react'
 import { buildWhatsAppUrl, buildDriverWhatsAppMessage, customerName, fmtDate, fmtTime } from '@/lib/utils'
 import type { StockWithDelivery } from '@/types'
 import { createClient } from '@/lib/supabase/client'
+import { useToast } from '@/components/ui/Toast'
 
 interface Props {
   stock: StockWithDelivery
@@ -20,6 +21,7 @@ export default function WhatsAppPanel({ stock, onClose }: Props) {
   const [deliveryLocation, setDeliveryLocation] = useState('')
   const [yards, setYards]                 = useState<string[]>(YARDS)
   const supabase = createClient()
+  const { error: toastError } = useToast()
 
   // Load yard list from settings if available
   useEffect(() => {
@@ -45,7 +47,7 @@ export default function WhatsAppPanel({ stock, onClose }: Props) {
   })
 
   function send() {
-    if (!driverPhone.trim()) return alert('Driver ka phone number daalo')
+    if (!driverPhone.trim()) { toastError('Driver ka phone number daalo'); return }
     const url = buildWhatsAppUrl(driverPhone, message)
     window.open(url, '_blank', 'noopener')
     onClose()

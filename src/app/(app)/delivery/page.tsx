@@ -61,15 +61,18 @@ export default function DeliveryPage() {
     const locs = [...new Set(enriched.map(r => r.current_location).filter(Boolean))] as string[]
     setLocations(locs.sort())
 
-    if (!isManager && locationName && locFilter === 'ALL') {
-      setLocFilter(locationName)
-    }
-
     setAllData(enriched)
     setLoading(false)
   }
 
   useEffect(() => { load() }, [])
+
+  // Auto-lock location for non-managers once locationName is available
+  useEffect(() => {
+    if (!isManager && locationName && locFilter === 'ALL') {
+      setLocFilter(locationName)
+    }
+  }, [isManager, locationName])
 
   const filtered = useMemo(() => {
     if (locFilter === 'ALL') return allData

@@ -32,7 +32,21 @@
   }
 }
 
-@layer components {
+@layer utilities {
+  @keyframes slide-in-from-bottom {
+    from { transform: translateY(8px); opacity: 0; }
+    to   { transform: translateY(0);   opacity: 1; }
+  }
+  .animate-in {
+    animation-fill-mode: both;
+  }
+  .slide-in-from-bottom-2 {
+    animation-name: slide-in-from-bottom;
+  }
+  .duration-200 {
+    animation-duration: 200ms;
+  }
+}
   /* Table base styles */
   .data-table {
     @apply w-full text-sm border-collapse;

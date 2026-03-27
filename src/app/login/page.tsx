@@ -5,13 +5,15 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 
+const FULL_ACCESS_CODES = new Set(['PDIQCMGR', 'ADMIN', 'SUPER_ADMIN', 'HR', 'GM'])
+
 export default function LoginPage() {
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
   const [showPw, setShowPw]     = useState(false)
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState<string | null>(null)
-  const router = useRouter()
+  const router   = useRouter()
   const supabase = createClient()
 
   async function handleSubmit(e: FormEvent) {
@@ -19,26 +21,43 @@ export default function LoginPage() {
     setError(null)
     setLoading(true)
 
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email: email.trim().toLowerCase(),
+    // Step 1 — sign in
+    const { data, error: authError } = await supabase.auth.signInWithPassword({
+      email:    email.trim().toLowerCase(),
       password,
     })
 
-    if (authError) {
+    if (authError || !data.user) {
       setError(
-        authError.message.includes('Invalid login')
+        authError?.message.includes('Invalid login')
           ? 'Email ya password galat hai. Dobara try karein.'
-          : authError.message
+          : (authError?.message ?? 'Login failed')
       )
       setLoading(false)
       return
     }
 
-    // Auth context will pick up the session change;
-    // middleware will handle routing but we push to root
-    // so the server component can role-redirect.
-    router.push('/')
-    router.refresh()
+    // Step 2 — fetch role in same round (parallel to session cookie being set)
+    // We redirect straight to the correct page instead of bouncing through '/'
+    const { data: emp } = await supabase
+      .from('employees')
+      .select('is_super_admin, role:roles(code)')
+      .eq('auth_user_id', data.user.id)
+      .single()
+
+    const code       = (emp?.role as any)?.code as string | undefined
+    const superAdmin = !!(emp as any)?.is_super_admin
+
+    if (superAdmin || (code && FULL_ACCESS_CODES.has(code))) {
+      router.replace('/dashboard')
+    } else if (code === 'TECHNICIAN') {
+      router.replace('/stock')
+    } else if (code === 'DRIVER') {
+      router.replace('/delivery')
+    } else {
+      router.replace('/dashboard')
+    }
+    // Keep spinner on while navigating — no setLoading(false) here
   }
 
   return (
@@ -51,15 +70,17 @@ export default function LoginPage() {
             <span className="text-2xl">🚗</span>
           </div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">GaadiCheck</h1>
-          <p className="text-slate-500 text-sm mt-1">Vehicle QC & Delivery Management</p>
+          <p className="text-slate-500 text-sm mt-1">Vehicle QC &amp; Delivery Management</p>
         </div>
 
         {/* Form Card */}
         <div className="card p-6 shadow-md">
-          <h2 className="text-base font-semibold text-slate-800 mb-5">Apne account mein login karein</h2>
+          <h2 className="text-base font-semibold text-slate-800 mb-5">
+            Apne account mein login karein
+          </h2>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Email */}
+
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">
                 Email
@@ -71,13 +92,13 @@ export default function LoginPage() {
                 placeholder="you@company.com"
                 required
                 autoComplete="email"
+                disabled={loading}
                 className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 text-sm
                            focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent
-                           placeholder:text-slate-400 transition-shadow"
+                           placeholder:text-slate-400 disabled:opacity-60 transition"
               />
             </div>
 
-            {/* Password */}
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">
                 Password
@@ -90,22 +111,22 @@ export default function LoginPage() {
                   placeholder="••••••••"
                   required
                   autoComplete="current-password"
+                  disabled={loading}
                   className="w-full px-3.5 py-2.5 pr-10 rounded-lg border border-slate-200 text-sm
                              focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent
-                             placeholder:text-slate-400 transition-shadow"
+                             placeholder:text-slate-400 disabled:opacity-60 transition"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPw(v => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                   tabIndex={-1}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                 >
                   {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
             </div>
 
-            {/* Error */}
             {error && (
               <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3.5 py-2.5">
                 <span className="text-red-500 mt-0.5 shrink-0">⚠</span>
@@ -113,7 +134,6 @@ export default function LoginPage() {
               </div>
             )}
 
-            {/* Submit */}
             <button
               type="submit"
               disabled={loading}
@@ -121,12 +141,12 @@ export default function LoginPage() {
                          text-white font-semibold py-2.5 rounded-lg text-sm transition-colors
                          disabled:opacity-60 disabled:cursor-not-allowed shadow-sm"
             >
-              {loading ? (
-                <><Loader2 size={16} className="animate-spin" /> Logging in...</>
-              ) : (
-                'Login Karein'
-              )}
+              {loading
+                ? <><Loader2 size={16} className="animate-spin" /> Logging in...</>
+                : 'Login Karein'
+              }
             </button>
+
           </form>
         </div>
 
