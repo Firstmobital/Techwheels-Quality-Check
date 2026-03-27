@@ -1,16 +1,15 @@
-'use client'
-
-import { useAuth } from '@/lib/auth-context'
-import { Bell } from 'lucide-react'
+import type { ReactNode } from 'react'
+import { Bell, LogOut } from 'lucide-react'
+import { useAuth } from '../../context/auth-context'
 
 interface HeaderProps {
   title: string
   subtitle?: string
-  actions?: React.ReactNode
+  actions?: ReactNode
 }
 
 export default function Header({ title, subtitle, actions }: HeaderProps) {
-  const { authUser } = useAuth()
+  const { signOut } = useAuth()
 
   return (
     <header className="sticky top-0 z-30 flex items-center gap-4 h-14
@@ -24,6 +23,14 @@ export default function Header({ title, subtitle, actions }: HeaderProps) {
 
       <div className="flex items-center gap-2">
         {actions}
+        <button
+          onClick={() => { void signOut() }}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium
+                     text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors"
+        >
+          <LogOut size={13} />
+          Logout
+        </button>
         <button className="relative p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
           <Bell size={17} />
         </button>

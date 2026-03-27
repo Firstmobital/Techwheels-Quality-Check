@@ -1,10 +1,7 @@
-'use client'
-
-import Link from 'next/link'
-import { usePathname } from 'next/navigation'
 import { useState, useEffect } from 'react'
-import { useAuth } from '@/lib/auth-context'
-import { cn } from '@/lib/utils'
+import { Link, useLocation } from 'react-router-dom'
+import { useAuth } from '../../context/auth-context'
+import { cn } from '../../lib/utils'
 import {
   LayoutDashboard, ClipboardList, CalendarCheck,
   CheckSquare, Settings, LogOut, MapPin, ShieldCheck, Menu, X
@@ -23,8 +20,9 @@ const ALL_NAV: NavItem[] = [
 const MANAGER_ONLY = new Set(['/dashboard', '/settings'])
 
 function NavContent({ onNav }: { onNav?: () => void }) {
-  const pathname = usePathname()
-  const { authUser, signOut, isManager, isTechnician, isDriver, isSuperAdmin, locationName } = useAuth()
+  const { pathname } = useLocation()
+  const { authUser, signOut, isManager, isTechnician, isDriver, isSuperAdmin } = useAuth()
+  const locationName = authUser?.location?.name ?? null
 
   const visibleNav = ALL_NAV.filter(item => {
     if (isSuperAdmin || isManager) return true
@@ -56,10 +54,12 @@ function NavContent({ onNav }: { onNav?: () => void }) {
       {/* Nav */}
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
         {visibleNav.map(item => {
-          const active = pathname.startsWith(item.href)
+          const active = item.href === '/dashboard'
+            ? pathname === '/dashboard'
+            : pathname === item.href || pathname.startsWith(`${item.href}/`)
           const Icon   = item.icon
           return (
-            <Link key={item.href} href={item.href} onClick={onNav}
+            <Link key={item.href} to={item.href} onClick={onNav}
               className={cn(
                 'flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                 active ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
@@ -111,7 +111,7 @@ function NavContent({ onNav }: { onNav?: () => void }) {
 
 export default function Sidebar() {
   const [open, setOpen] = useState(false)
-  const pathname = usePathname()
+  const { pathname } = useLocation()
 
   // Close on route change
   useEffect(() => { setOpen(false) }, [pathname])
