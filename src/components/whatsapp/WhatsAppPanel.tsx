@@ -27,7 +27,7 @@ export default function WhatsAppPanel({ stock, onClose }: Props) {
   useEffect(() => {
     supabase.from('app_settings')
       .select('value').eq('key', 'yards').single()
-      .then(({ data }) => {
+      .then(({ data }: { data: { value: unknown } | null }) => {
         if (data?.value) setYards(data.value as string[])
       })
   }, [])

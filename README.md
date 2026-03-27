@@ -1,6 +1,6 @@
 # GaadiCheck
 
-Vehicle QC & Delivery Management — built on Next.js 14 + Supabase + Vercel.
+Vehicle QC & Delivery Management — built on Vite + React + Supabase.
 
 ---
 
@@ -22,8 +22,8 @@ cp .env.local.example .env.local
 Edit `.env.local`:
 
 ```
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
 ```
 
 Both values are in your Supabase dashboard → Settings → API.
@@ -42,11 +42,11 @@ This creates:
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000)
+Open [http://localhost:5173](http://localhost:5173)
 
 ---
 
-## Deploy to Vercel
+## Deploy
 
 ```bash
 # Install Vercel CLI
@@ -56,8 +56,8 @@ npm i -g vercel
 vercel
 
 # Add environment variables when prompted, or in Vercel dashboard:
-# NEXT_PUBLIC_SUPABASE_URL
-# NEXT_PUBLIC_SUPABASE_ANON_KEY
+# VITE_SUPABASE_URL
+# VITE_SUPABASE_ANON_KEY
 ```
 
 Or connect your GitHub repo in Vercel dashboard — auto-deploys on every push.
@@ -68,21 +68,21 @@ Or connect your GitHub repo in Vercel dashboard — auto-deploys on every push.
 
 ```
 src/
-├── app/
+├── pages/
 │   ├── login/          — Email + password login
-│   └── (app)/
-│       ├── dashboard/  — Manager overview + today's deliveries
-│       ├── stock/      — Match stock table with search + filters
-│       ├── delivery/   — Delivery schedule (today / upcoming / unscheduled)
-│       ├── qc/         — QC checklist form with photos
-│       └── settings/   — Yard management + employee list
+│   ├── dashboard/      — Manager overview + today's deliveries
+│   ├── stock/          — Match stock table + detail page
+│   ├── delivery/       — Delivery schedule (today / upcoming / unscheduled)
+│   ├── qc/             — QC checklist form with photos
+│   └── settings/       — Yard management + employee list
 ├── components/
 │   ├── layout/         — Sidebar, Header
 │   ├── delivery/       — DeliveryModal
 │   └── whatsapp/       — WhatsAppPanel
+├── context/
+│   └── auth-context.tsx — Employee/role/location context
 ├── lib/
-│   ├── supabase/       — Browser + server clients
-│   ├── auth-context.tsx — Employee/role/location context
+│   ├── supabase/       — Browser client
 │   └── utils.ts        — Date helpers, WhatsApp builder
 └── types/index.ts      — All TypeScript types
 ```

@@ -5,6 +5,10 @@ import LoginPage from '../pages/login/LoginPage'
 import AppLayout from '../components/layout/AppLayout'
 import DashboardPage from '../pages/dashboard/DashboardPage'
 import StockPage from '../pages/stock/StockPage'
+import StockDetailPage from '../pages/stock/StockDetailPage'
+import QCPage from '../pages/qc/QCPage'
+import DeliveryPage from '../pages/delivery/DeliveryPage'
+import SettingsPage from '../pages/settings/SettingsPage'
 
 function PublicOnlyRoute() {
   const { authUser, loading } = useAuth()
@@ -61,10 +65,10 @@ export function AppRouter() {
         <Route element={<AppLayout />}>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/stock" element={<StockPage />} />
-          <Route path="/stock/:chassis" element={<PlaceholderPage title="Stock Detail" />} />
-          <Route path="/delivery" element={<PlaceholderPage title="Delivery Schedule" />} />
-          <Route path="/qc" element={<PlaceholderPage title="QC Checklist" />} />
-          <Route path="/settings" element={<PlaceholderPage title="Settings" />} />
+          <Route path="/stock/:chassis" element={<StockDetailPage />} />
+          <Route path="/delivery" element={<DeliveryPage />} />
+          <Route path="/qc" element={<QCPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
         </Route>
       </Route>
 

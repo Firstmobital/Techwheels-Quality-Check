@@ -78,7 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    const employee = emp as Employee & {
+    const employee = emp as unknown as Employee & {
       role: Role
       location: Location | null
       is_super_admin?: boolean

@@ -1,13 +1,6 @@
 import { FormEvent, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { RoleCode, useAuth } from '../../context/auth-context'
-
-const ROLE_OPTIONS: Array<{ value: RoleCode; label: string }> = [
-  { value: 'PDIQCMGR', label: 'Manager (PDIQCMGR)' },
-  { value: 'TECHNICIAN', label: 'Technician' },
-  { value: 'DRIVER', label: 'Driver' },
-  { value: 'SUPER_ADMIN', label: 'Super Admin' },
-]
+import { useAuth } from '../../context/auth-context'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -15,24 +8,28 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [role, setRole] = useState<RoleCode>('PDIQCMGR')
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    setError(null)
     setLoading(true)
 
-    await signIn({ email, password, role })
-    navigate('/', { replace: true })
-
-    setLoading(false)
+    try {
+      await signIn({ email, password })
+      navigate('/', { replace: true })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Login failed')
+      setLoading(false)
+    }
   }
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
       <div className="w-full max-w-sm bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
         <h1 className="text-xl font-bold text-slate-900">Techwheels Login</h1>
-        <p className="text-sm text-slate-500 mt-1">Phase 1 auth shell</p>
+        <p className="text-sm text-slate-500 mt-1">Sign in to continue</p>
 
         <form onSubmit={handleSubmit} className="space-y-4 mt-6">
           <div>
@@ -59,20 +56,11 @@ export default function LoginPage() {
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Role (for Phase 1 testing)</label>
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value as RoleCode)}
-              className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white"
-            >
-              {ROLE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
+          {error && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              {error}
+            </div>
+          )}
 
           <button
             type="submit"
