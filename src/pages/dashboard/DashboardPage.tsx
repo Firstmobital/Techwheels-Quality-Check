@@ -73,7 +73,9 @@ export default function DashboardPage() {
 
     const [{ data: stock }, { data: bookings }, { data: qcRecords }] = await Promise.all([
       supabase.from('matched_stock_customers')
-        .select('chassis_no, opportunity_name, current_location, parent_product_line, first_name, last_name, mobile_number'),
+        .select('chassis_no, opportunity_name, current_location, parent_product_line, first_name, last_name, mobile_number')
+        .not('first_name', 'is', null)
+        .neq('first_name', ''),
       supabase.from('booking')
         .select('crm_opty_id, delivery_date, delivery_time, qc_check_status')
         .not('crm_opty_id', 'is', null),
@@ -88,6 +90,7 @@ export default function DashboardPage() {
     const qcMap = new Map(qcRows.map((q) => [q.chassis_no, q]))
 
     const relevantStock = stockRows.filter((s) => {
+      if ((s.first_name ?? '').trim().length === 0) return false
       if (isSuperAdmin || isManager) return true
       if (locationName) return s.current_location === locationName
       return true
