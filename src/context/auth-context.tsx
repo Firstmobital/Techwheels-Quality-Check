@@ -75,7 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .single()
 
       const timeoutPromise = new Promise<{ data: null; error: { message: string } }>((resolve) =>
-        setTimeout(() => resolve({ data: null, error: { message: 'Query timeout' } }), 10000)
+        setTimeout(() => resolve({ data: null, error: { message: 'Query timeout' } }), 15000)
       )
 
       const { data: emp, error } = await Promise.race([queryPromise, timeoutPromise])
@@ -118,14 +118,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let mounted = true
     let timeoutHandle: ReturnType<typeof setTimeout> | null = null
 
-    // Safety timeout: if loading is still true after 15 seconds, force clear it
+    // Safety timeout: if loading is still true after 25 seconds, force clear it
     const safetyTimeout = () => {
       timeoutHandle = setTimeout(() => {
         if (mounted && loading) {
           console.warn('Auth loading timeout exceeded, forcing completion')
           clearAuth()
         }
-      }, 15000)
+      }, 25000)
     }
 
     const bootstrap = async () => {
