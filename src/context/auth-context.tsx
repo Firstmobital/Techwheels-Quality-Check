@@ -25,6 +25,9 @@ interface AuthContextValue {
   isTechnician: boolean
   isDriver: boolean
   isSuperAdmin: boolean
+  // Global branch filter
+  selectedBranch: string | null
+  setSelectedBranch: (branch: string | null) => void
 }
 
 const FULL_ACCESS_CODES = new Set(['PDIQCMGR', 'ADMIN', 'SUPER_ADMIN', 'HR', 'GM'])
@@ -38,11 +41,14 @@ const AuthContext = createContext<AuthContextValue>({
   isTechnician: false,
   isDriver: false,
   isSuperAdmin: false,
+  selectedBranch: null,
+  setSelectedBranch: () => {},
 })
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
   const [loading, setLoading] = useState(true)
+  const [selectedBranch, setSelectedBranch] = useState<string | null>(null)
   const supabase = getSupabaseBrowserClient()
   const latestUserIdRef = useRef<string | null>(null)
   const latestRequestIdRef = useRef(0)
@@ -59,10 +65,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     latestRequestIdRef.current = requestId
     latestUserIdRef.current = userId
     setLoading(true)
-    console.debug(`[Auth] loadEmployee: Starting for user ${userId} (request ${requestId})`)
 
     try {
-      console.debug(`[Auth] loadEmployee: Querying employees table for auth_user_id=${userId}`)
       const { data: emp, error } = await supabase
         .from('employees')
         .select(`
@@ -75,24 +79,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .eq('auth_user_id', userId)
         .single()
 
-      if (latestRequestIdRef.current !== requestId || latestUserIdRef.current !== userId) {
-        console.debug(`[Auth] Ignoring stale employee request ${requestId} for user ${userId}`)
-        return
-      }
+      if (latestRequestIdRef.current !== requestId || latestUserIdRef.current !== userId) return
 
-      if (error) {
-        console.error('[Auth] Employee lookup query error:', {
-          code: error.code,
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-        })
-        clearAuth()
-        return
-      }
-
-      if (!emp) {
-        console.error('[Auth] Employee record not found for user:', userId)
+      if (error || !emp) {
         clearAuth()
         return
       }
@@ -109,23 +98,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         location: employee.location ?? null,
         isSuperAdmin: employee.is_super_admin ?? false,
       })
-      console.info(`[Auth] Employee loaded: ${employee.first_name} ${employee.last_name} (ID: ${employee.id})`)
-    } catch (err) {
-      if (latestRequestIdRef.current === requestId) {
-        console.error('[Auth] Employee lookup exception:', {
-          name: err instanceof Error ? err.name : 'Unknown',
-          message: err instanceof Error ? err.message : String(err),
-          stack: err instanceof Error ? err.stack : undefined,
-        })
-        clearAuth()
-      }
+    } catch {
+      if (latestRequestIdRef.current === requestId) clearAuth()
     } finally {
-      if (latestRequestIdRef.current === requestId) {
-        console.debug(`[Auth] loadEmployee: Setting loading=false for request ${requestId}`)
-        setLoading(false)
-      } else {
-        console.debug(`[Auth] loadEmployee: Skipping loading=false for stale request ${requestId} (current: ${latestRequestIdRef.current})`)
-      }
+      if (latestRequestIdRef.current === requestId) setLoading(false)
     }
   }, [clearAuth, supabase])
 
@@ -135,82 +111,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const bootstrap = async () => {
       try {
-        console.debug('[Auth] Bootstrap: Starting session restoration')
-        
         const { data, error } = await supabase.auth.getSession()
-        console.debug('[Auth] Bootstrap: getSession result:', {
-          hasSession: !!data.session,
-          hasUser: !!data.session?.user,
-          userId: data.session?.user?.id || 'none',
-          error: error?.message || 'none',
-        })
-
-
-        if (!mounted) {
-          console.debug('[Auth] Bootstrap: Component unmounted, skipping')
-          return
-        }
-
-        if (error) {
-          console.error('[Auth] Bootstrap: Session retrieval error:', error.message)
-          clearAuth()
-          return
-        }
-
-        if (!data.session?.user) {
-          console.debug('[Auth] Bootstrap: No session found, clearing auth')
-          clearAuth()
-          return
-        }
-
-        console.debug('[Auth] Bootstrap: Session found, loading employee data')
+        if (!mounted) return
+        if (error || !data.session?.user) { clearAuth(); return }
         await loadEmployee(data.session.user.id)
-      } catch (err) {
-        if (mounted) {
-          console.error('[Auth] Bootstrap: Unexpected error:', err)
-          clearAuth()
-        }
+      } catch {
+        if (mounted) clearAuth()
       }
     }
 
     bootstrap()
 
-    // Timeout to prevent indefinite loading state (30 seconds)
     timeoutId = setTimeout(() => {
-      if (mounted) {
-        console.warn('[Auth] Bootstrap timeout - still loading after 30s')
-        setLoading(false)
-      }
+      if (mounted) setLoading(false)
     }, 30000)
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
       if (!mounted) return
-
-      console.debug('[Auth] onAuthStateChange:', {
-        event,
-        hasSession: !!session,
-        userId: session?.user?.id || 'none',
-      })
-
-      console.debug('[Auth] Auth state change:', event)
-
-      if (event === 'INITIAL_SESSION') {
-          console.debug('[Auth] INITIAL_SESSION event - skipping handler')
-        return
-      }
-
+      if (event === 'INITIAL_SESSION') return
       if (session?.user?.id) {
-        console.debug('[Auth] Auth state has user, calling loadEmployee')
-        // Defer DB call outside auth callback to avoid Supabase lock/deadlock issues.
         setTimeout(() => {
           if (!mounted) return
-          void loadEmployee(session.user.id).catch((err) => {
-            console.error('[Auth] State change load failed:', err)
-            clearAuth()
-          })
+          void loadEmployee(session.user.id).catch(() => clearAuth())
         }, 0)
       } else {
-        console.debug('[Auth] Auth state has no user, clearing auth')
         clearAuth()
       }
     })
@@ -224,26 +148,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = useCallback(async ({ email, password }: SignInInput) => {
     setLoading(true)
-
     const { data, error } = await supabase.auth.signInWithPassword({
       email: email.trim().toLowerCase(),
       password,
     })
-
     if (error || !data.user) {
       setLoading(false)
       throw new Error(error?.message ?? 'Login failed')
     }
-
-    // Profile loading is handled by onAuthStateChange(SIGNED_IN) to avoid duplicate requests.
   }, [supabase])
 
   const signOut = useCallback(async () => {
     const { error } = await supabase.auth.signOut()
-    if (error) {
-      throw new Error(error.message)
-    }
-
+    if (error) throw new Error(error.message)
+    setSelectedBranch(null)
     clearAuth()
   }, [clearAuth, supabase])
 
@@ -265,8 +183,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isTechnician,
       isDriver,
       isSuperAdmin,
+      selectedBranch,
+      setSelectedBranch,
     }),
-    [authUser, loading, isManager, isTechnician, isDriver, isSuperAdmin]
+    [authUser, loading, isManager, isTechnician, isDriver, isSuperAdmin, selectedBranch, signIn, signOut]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from 'react'
-import { RefreshCw, AlertTriangle, Clock } from 'lucide-react'
+import { RefreshCw, AlertTriangle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/context/auth-context'
+import { useBranch } from '@/context/branch-context'
 import {
   buildSalesTeamMap,
   deriveCarStatus,
@@ -9,9 +10,7 @@ import {
   carStatusBadgeClass,
   customerName,
   fmtDate,
-  fmtTime,
   getDeliveryStatus,
-  isWithin48Hours,
   getSalesTeamLocation,
 } from '@/lib/utils'
 import type {
@@ -22,11 +21,56 @@ import type {
   BookingRow,
 } from '@/types'
 
+// ── In-city detection ─────────────────────────────────────────────────────────
+const JAIPUR_LOCATIONS = new Set(['Jagatpura', 'Ajmer Road', 'Hawa Sadak'])
+
+function isInCity(from: string, to: string): boolean {
+  return JAIPUR_LOCATIONS.has(from) && JAIPUR_LOCATIONS.has(to)
+}
+
+// ── Date range helpers ────────────────────────────────────────────────────────
+type DateRange = 'today' | 'week' | 'month' | 'custom'
+
+function getDateBounds(range: DateRange, customFrom: string, customTo: string): { from: Date; to: Date } {
+  const now = new Date()
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const endOfDay   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+
+  if (range === 'today') {
+    return { from: startOfDay, to: endOfDay }
+  }
+  if (range === 'week') {
+    const day = now.getDay()
+    const monday = new Date(startOfDay)
+    monday.setDate(startOfDay.getDate() - ((day + 6) % 7))
+    return { from: monday, to: endOfDay }
+  }
+  if (range === 'month') {
+    const first = new Date(now.getFullYear(), now.getMonth(), 1)
+    return { from: first, to: endOfDay }
+  }
+  // custom
+  const from = customFrom ? new Date(customFrom) : startOfDay
+  const to   = customTo   ? new Date(new Date(customTo).setHours(23, 59, 59, 999)) : endOfDay
+  return { from, to }
+}
+
+// ── Driver report types ───────────────────────────────────────────────────────
+interface DriverStat {
+  id: number
+  name: string
+  total: number
+  completed: number
+  inCity: number
+  outCity: number
+}
+
 // ── Data loader ───────────────────────────────────────────────────────────────
 async function loadAllStock(
   isManager: boolean,
   isSuperAdmin: boolean,
   locationName: string,
+  selectedBranch: string | null,
 ): Promise<StockWithMeta[]> {
   const supabase = createClient()
 
@@ -46,7 +90,6 @@ async function loadAllStock(
     supabase.from('transfer_tasks').select('*'),
   ])
 
-  // booking map: crm_opty_id → booking row
   const bookingMap = new Map<string, BookingRow>()
   for (const b of (bookingData ?? []) as BookingRow[]) {
     if (b.crm_opty_id) bookingMap.set(b.crm_opty_id, b)
@@ -63,28 +106,22 @@ async function loadAllStock(
   }
 
   let stock = (stockData ?? []) as MatchedStock[]
-
-  // only cars that have a customer matched
   stock = stock.filter(
     s => `${s.first_name ?? ''} ${s.last_name ?? ''}`.trim().length > 0,
   )
 
-  // location filter for non-managers
   if (!isManager && !isSuperAdmin && locationName) {
     stock = stock.filter(s => s.current_location === locationName)
   }
 
   return stock.map(s => {
-    const booking = s.opportunity_name
-      ? bookingMap.get(s.opportunity_name)
-      : null
+    const booking = s.opportunity_name ? bookingMap.get(s.opportunity_name) : null
     const qcRecord = qcMap.get(s.chassis_no) ?? null
     const transfer = transferMap.get(s.chassis_no) ?? null
     const deliveryBranch = getSalesTeamLocation(salesTeamMap, s.sales_team)
     const deliveryDate = booking?.delivery_date ?? null
     const deliveryTime = booking?.delivery_time ?? null
-    const qcStatus =
-      qcRecord?.final_status ?? booking?.qc_check_status ?? null
+    const qcStatus = qcRecord?.final_status ?? booking?.qc_check_status ?? null
 
     return {
       ...s,
@@ -105,22 +142,30 @@ async function loadAllStock(
       ),
       delivery_branch: deliveryBranch,
     } satisfies StockWithMeta
-  })
+  }).filter(s => !selectedBranch || s.delivery_branch === selectedBranch)
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function HomePage() {
   const { authUser, isManager, isSuperAdmin } = useAuth()
+  const { selectedBranch } = useBranch()
   const [items, setItems] = useState<StockWithMeta[]>([])
   const [loading, setLoading] = useState(true)
+
+  // Driver report state
+  const [driverStats, setDriverStats] = useState<DriverStat[]>([])
+  const [driverLoading, setDriverLoading] = useState(true)
+  const [dateRange, setDateRange] = useState<DateRange>('today')
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState('')
+  const [showCustom, setShowCustom] = useState(false)
 
   const locationName = authUser?.location?.name ?? ''
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await loadAllStock(isManager, isSuperAdmin, locationName)
-      // sort by delivery date ascending, nulls last
+      const data = await loadAllStock(isManager, isSuperAdmin, locationName, selectedBranch)
       data.sort((a, b) => {
         if (!a.delivery_date && !b.delivery_date) return 0
         if (!a.delivery_date) return 1
@@ -131,25 +176,98 @@ export default function HomePage() {
     } finally {
       setLoading(false)
     }
-  }, [isManager, isSuperAdmin, locationName])
+  }, [isManager, isSuperAdmin, locationName, selectedBranch])
+
+  const loadDriverStats = useCallback(async () => {
+    setDriverLoading(true)
+    try {
+      const supabase = createClient()
+      const { from, to } = getDateBounds(dateRange, customFrom, customTo)
+
+      const [{ data: tasks }, { data: employees }] = await Promise.all([
+        supabase
+          .from('transfer_tasks')
+          .select('*')
+          .gte('assigned_at', from.toISOString())
+          .lte('assigned_at', to.toISOString()),
+        supabase
+          .from('employees')
+          .select('id, first_name, last_name, role:roles!inner(code)')
+          .eq('roles.code', 'DRIVER'),
+      ])
+
+      const taskList = (tasks ?? []) as TransferTask[]
+      const empList = (employees ?? []) as Array<{
+        id: number
+        first_name: string
+        last_name: string | null
+        role: Array<{ code: string }>
+      }>
+
+      // group tasks by driver
+      const statsMap = new Map<number, DriverStat>()
+
+      for (const emp of empList) {
+        statsMap.set(emp.id, {
+          id: emp.id,
+          name: [emp.first_name, emp.last_name].filter(Boolean).join(' '),
+          total: 0,
+          completed: 0,
+          inCity: 0,
+          outCity: 0,
+        })
+      }
+
+      for (const task of taskList) {
+        if (!task.driver_id) continue
+        if (!statsMap.has(task.driver_id)) continue
+
+        const stat = statsMap.get(task.driver_id)!
+        stat.total++
+
+        if (task.status === 'arrived') stat.completed++
+
+        if (isInCity(task.from_location, task.to_location)) {
+          stat.inCity++
+        } else {
+          stat.outCity++
+        }
+      }
+
+      // only show drivers who have at least 1 task in range
+      const result = Array.from(statsMap.values())
+        .filter(s => s.total > 0)
+        .sort((a, b) => b.total - a.total)
+
+      setDriverStats(result)
+    } finally {
+      setDriverLoading(false)
+    }
+  }, [dateRange, customFrom, customTo])
 
   useEffect(() => { void load() }, [load])
+  useEffect(() => { void loadDriverStats() }, [loadDriverStats])
 
   // ── Stats ─────────────────────────────────────────────────────────────────
   const total         = items.length
   const transferCount = items.filter(i =>
     ['transfer_needed', 'transfer_assigned', 'in_transit'].includes(i.car_status),
   ).length
-  const qcPending     = items.filter(i => i.car_status === 'qc_pending').length
-  const rejected      = items.filter(i => i.car_status === 'qc_rejected').length
-  const ready         = items.filter(i =>
-    i.car_status === 'qc_approved' || i.car_status === 'ready',
-  ).length
+  const qcPending  = items.filter(i => i.car_status === 'qc_pending').length
+  const qcApproved = items.filter(i => i.car_status === 'qc_approved' || i.car_status === 'ready').length
+  const rejected   = items.filter(i => i.car_status === 'qc_rejected').length
 
   const rejectedItems = items.filter(i => i.car_status === 'qc_rejected')
-  const upcoming48    = items.filter(
-    i => i.delivery_date && isWithin48Hours(i.delivery_date),
-  )
+
+  function handleRangeClick(r: DateRange) {
+    if (r === 'custom') {
+      setShowCustom(true)
+      setDateRange('custom')
+    } else {
+      setShowCustom(false)
+      setDateRange(r)
+    }
+  }
 
   return (
     <div className="fade-in">
@@ -164,7 +282,7 @@ export default function HomePage() {
         <button
           className="nav-btn"
           style={{ minWidth: 36, minHeight: 36 }}
-          onClick={() => { void load() }}
+          onClick={() => { void load(); void loadDriverStats() }}
           disabled={loading}
         >
           <RefreshCw size={18} className={loading ? 'spin' : ''} />
@@ -181,7 +299,7 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Stat cards */}
+      {/* Row 1: Total Cars + Transfer Pending */}
       <div className="stat-grid">
         <div className="stat-card">
           <div className="stat-label">Total Cars</div>
@@ -195,15 +313,25 @@ export default function HomePage() {
             {loading ? '—' : transferCount}
           </div>
         </div>
-        <div className="stat-card">
-          <div className="stat-label">QC Pending</div>
-          <div className="stat-value" style={{ color: 'var(--purple)' }}>
+      </div>
+
+      {/* Row 2: QC Pending + QC Approved + QC Rejected */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, padding: '0 16px 4px' }}>
+        <div className="stat-card" style={{ padding: '12px 10px' }}>
+          <div className="stat-label" style={{ fontSize: 10 }}>QC Pending</div>
+          <div className="stat-value" style={{ color: 'var(--purple)', fontSize: 22 }}>
             {loading ? '—' : qcPending}
           </div>
         </div>
-        <div className="stat-card">
-          <div className="stat-label">QC Rejected</div>
-          <div className="stat-value" style={{ color: 'var(--red)' }}>
+        <div className="stat-card" style={{ padding: '12px 10px' }}>
+          <div className="stat-label" style={{ fontSize: 10 }}>QC Approved</div>
+          <div className="stat-value" style={{ color: 'var(--green)', fontSize: 22 }}>
+            {loading ? '—' : qcApproved}
+          </div>
+        </div>
+        <div className="stat-card" style={{ padding: '12px 10px' }}>
+          <div className="stat-label" style={{ fontSize: 10 }}>QC Rejected</div>
+          <div className="stat-value" style={{ color: 'var(--red)', fontSize: 22 }}>
             {loading ? '—' : rejected}
           </div>
         </div>
@@ -230,32 +358,19 @@ export default function HomePage() {
                         {item.product_description ?? item.product_line ?? '—'}
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
-                        {customerName(item)}
+                        {item.sales_team ?? customerName(item)}
                       </div>
                     </div>
                     <span className="badge badge-red">QC Rejected</span>
                   </div>
                   {item.qc_record?.remarks && (
-                    <div
-                      style={{
-                        marginTop: 8,
-                        padding: '6px 10px',
-                        background: '#FEE2E2',
-                        borderRadius: 8,
-                        fontSize: 12,
-                        color: 'var(--red)',
-                      }}
-                    >
+                    <div style={{ marginTop: 8, padding: '6px 10px', background: '#FEE2E2', borderRadius: 8, fontSize: 12, color: 'var(--red)' }}>
                       {item.qc_record.remarks}
                     </div>
                   )}
                   {item.delivery_date && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 8, fontSize: 12, color: 'var(--muted)' }}>
-                      <Clock size={12} />
-                      <span>
-                        {fmtDate(item.delivery_date)}
-                        {item.delivery_time ? ', ' + fmtTime(item.delivery_time) : ''}
-                      </span>
+                    <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
+                      {fmtDate(item.delivery_date)}
                     </div>
                   )}
                 </div>
@@ -265,131 +380,137 @@ export default function HomePage() {
         </>
       )}
 
-      {/* Upcoming 48h deliveries */}
-      <div className="section-label">
-        {upcoming48.length > 0
-          ? `Deliveries in next 48 hours (${upcoming48.length})`
-          : 'Deliveries in next 48 hours'}
+      {/* Driver Task Report */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 16px 8px' }}>
+        <div className="section-label" style={{ padding: 0 }}>Driver task report</div>
+        <div style={{ display: 'flex', gap: 5 }}>
+          {(['today', 'week', 'month', 'custom'] as DateRange[]).map(r => (
+            <button
+              key={r}
+              onClick={() => handleRangeClick(r)}
+              style={{
+                fontSize: 11,
+                padding: '4px 9px',
+                borderRadius: 20,
+                border: '1px solid var(--border)',
+                background: dateRange === r ? 'var(--text)' : 'transparent',
+                color: dateRange === r ? 'var(--surface)' : 'var(--muted)',
+                cursor: 'pointer',
+                fontWeight: 500,
+                textTransform: 'capitalize',
+              }}
+            >
+              {r === 'week' ? 'Week' : r === 'month' ? 'Month' : r === 'custom' ? 'Custom' : 'Today'}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {loading ? (
-        <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-          Loading...
-        </div>
-      ) : upcoming48.length === 0 ? (
-        <div style={{ margin: '0 16px', padding: '20px', textAlign: 'center', color: 'var(--muted)', fontSize: 13, background: 'var(--surface)', borderRadius: 12, border: '1px solid var(--border)' }}>
-          No deliveries in the next 48 hours
-        </div>
-      ) : (
-        <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {upcoming48.map(item => (
-            <div key={item.chassis_no} className="card">
-              <div style={{ padding: '12px 14px' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-                  <div>
-                    <span className="mono" style={{ color: 'var(--accent)', display: 'block', marginBottom: 2 }}>
-                      {item.chassis_no}
-                    </span>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
-                      {item.product_description ?? item.product_line ?? '—'}
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
-                      {customerName(item)}
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-                    <span
-                      className={`badge ${
-                        item.delivery_status === 'today' ? 'badge-red' : 'badge-amber'
-                      }`}
-                    >
-                      {item.delivery_status === 'today' ? 'Today' : 'Tomorrow'}
-                    </span>
-                    <span className={`badge ${carStatusBadgeClass(item.car_status)}`}>
-                      {carStatusLabel(item.car_status)}
-                    </span>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 8, fontSize: 12, color: 'var(--muted)' }}>
-                  <Clock size={12} />
-                  <span>
-                    {fmtDate(item.delivery_date)}
-                    {item.delivery_time ? ', ' + fmtTime(item.delivery_time) : ''}
-                  </span>
-                  {item.delivery_branch && (
-                    <>
-                      <span style={{ margin: '0 4px' }}>·</span>
-                      <span>{item.delivery_branch}</span>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
+      {/* Custom date range picker */}
+      {showCustom && (
+        <div style={{ display: 'flex', gap: 8, padding: '0 16px 10px', alignItems: 'center' }}>
+          <input
+            type="date"
+            className="form-input"
+            value={customFrom}
+            onChange={e => setCustomFrom(e.target.value)}
+            style={{ flex: 1, fontSize: 13 }}
+          />
+          <span style={{ fontSize: 12, color: 'var(--muted)' }}>to</span>
+          <input
+            type="date"
+            className="form-input"
+            value={customTo}
+            onChange={e => setCustomTo(e.target.value)}
+            style={{ flex: 1, fontSize: 13 }}
+          />
+          <button
+            onClick={() => void loadDriverStats()}
+            style={{
+              padding: '8px 12px',
+              borderRadius: 8,
+              background: 'var(--accent)',
+              color: '#fff',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: 12,
+              fontWeight: 600,
+              flexShrink: 0,
+            }}
+          >
+            Apply
+          </button>
         </div>
       )}
 
-      {/* All cars sorted by delivery date */}
-      <div className="section-label" style={{ marginTop: 8 }}>
-        All Cars — by delivery date
-      </div>
+      {/* Driver report table */}
+      <div style={{ margin: '0 16px 8px' }}>
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
+          {/* Table header */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 44px 44px 44px 58px',
+            padding: '8px 12px',
+            background: 'var(--bg)',
+            borderBottom: '1px solid var(--border)',
+          }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Driver</div>
+            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'center' }}>Total</div>
+            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'center' }}>In</div>
+            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--amber)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'center' }}>Out</div>
+            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--green)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'center' }}>Done</div>
+          </div>
 
-      {loading ? (
-        <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-          Loading...
-        </div>
-      ) : items.length === 0 ? (
-        <div style={{ margin: '0 16px 16px', padding: '20px', textAlign: 'center', color: 'var(--muted)', fontSize: 13, background: 'var(--surface)', borderRadius: 12, border: '1px solid var(--border)' }}>
-          No matched stock found
-        </div>
-      ) : (
-        <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {items.map(item => (
-            <div key={item.chassis_no} className="card">
-              <div style={{ padding: '12px 14px' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <span className="mono" style={{ color: 'var(--accent)', display: 'block', marginBottom: 2 }}>
-                      {item.chassis_no}
-                    </span>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {item.product_description ?? item.product_line ?? '—'}
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
-                      {customerName(item)}
-                    </div>
+          {driverLoading ? (
+            <div style={{ padding: '20px', textAlign: 'center', fontSize: 13, color: 'var(--muted)' }}>Loading...</div>
+          ) : driverStats.length === 0 ? (
+            <div style={{ padding: '20px', textAlign: 'center', fontSize: 13, color: 'var(--muted)' }}>
+              No driver tasks in this period
+            </div>
+          ) : (
+            driverStats.map((stat, idx) => {
+              const doneColor =
+                stat.completed === stat.total ? '#DCFCE7' :
+                stat.completed === 0          ? '#FEE2E2' : '#FEF3C7'
+              const doneTextColor =
+                stat.completed === stat.total ? 'var(--green)' :
+                stat.completed === 0          ? 'var(--red)' : 'var(--amber)'
+
+              return (
+                <div
+                  key={stat.id}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 44px 44px 44px 58px',
+                    padding: '10px 12px',
+                    borderBottom: idx < driverStats.length - 1 ? '1px solid var(--border)' : 'none',
+                    alignItems: 'center',
+                  }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: 8 }}>
+                    {stat.name}
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
-                    <span className={`badge ${carStatusBadgeClass(item.car_status)}`}>
-                      {carStatusLabel(item.car_status)}
+                  <div style={{ fontSize: 13, color: 'var(--text)', textAlign: 'center' }}>{stat.total}</div>
+                  <div style={{ fontSize: 13, color: 'var(--accent)', textAlign: 'center', fontWeight: 500 }}>{stat.inCity}</div>
+                  <div style={{ fontSize: 13, color: 'var(--amber)', textAlign: 'center', fontWeight: 500 }}>{stat.outCity}</div>
+                  <div style={{ textAlign: 'center' }}>
+                    <span style={{
+                      fontSize: 11,
+                      padding: '2px 7px',
+                      borderRadius: 20,
+                      background: doneColor,
+                      color: doneTextColor,
+                      fontWeight: 600,
+                    }}>
+                      {stat.completed}/{stat.total}
                     </span>
-                    {item.delivery_date && (
-                      <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                        {fmtDate(item.delivery_date)}
-                      </span>
-                    )}
                   </div>
                 </div>
-                {(item.current_location || item.delivery_branch) && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
-                    {item.current_location && (
-                      <span className="badge badge-gray">{item.current_location}</span>
-                    )}
-                    {item.delivery_branch &&
-                      item.delivery_branch !== item.current_location && (
-                        <>
-                          <span style={{ fontSize: 11, color: 'var(--muted)' }}>→</span>
-                          <span className="badge badge-blue">{item.delivery_branch}</span>
-                        </>
-                      )}
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-          <div style={{ height: 8 }} />
+              )
+            })
+          )}
         </div>
-      )}
+      </div>
 
       <div style={{ height: 16 }} />
     </div>

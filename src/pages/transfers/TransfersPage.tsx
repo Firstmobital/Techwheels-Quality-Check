@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { RefreshCw, Search, X, UserCheck } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/context/auth-context'
+import { useBranch } from '@/context/branch-context'
 import { useToast } from '@/components/ui/Toast'
 import {
   buildSalesTeamMap,
@@ -46,6 +47,12 @@ function AssignDriverSheet({
   )
   const [saving, setSaving] = useState(false)
 
+  // look up assigned driver name
+  const assignedDriver = drivers.find(d => d.id === item.transfer?.driver_id)
+  const assignedDriverName = assignedDriver
+    ? [assignedDriver.first_name, assignedDriver.last_name].filter(Boolean).join(' ')
+    : null
+
   useEffect(() => {
     supabase
       .from('employees')
@@ -70,11 +77,7 @@ function AssignDriverSheet({
       if (item.transfer?.id) {
         const { error } = await supabase
           .from('transfer_tasks')
-          .update({
-            driver_id: driverId,
-            status: 'assigned',
-            assigned_at: new Date().toISOString(),
-          })
+          .update({ driver_id: driverId, status: 'assigned', assigned_at: new Date().toISOString() })
           .eq('id', item.transfer.id)
         if (error) throw error
       } else {
@@ -93,9 +96,7 @@ function AssignDriverSheet({
       onSaved()
       onClose()
     } catch (err: unknown) {
-      toastError(
-        'Failed: ' + (err instanceof Error ? err.message : 'Unknown error'),
-      )
+      toastError('Failed: ' + (err instanceof Error ? err.message : 'Unknown error'))
     } finally {
       setSaving(false)
     }
@@ -110,52 +111,33 @@ function AssignDriverSheet({
         <div style={{ padding: '14px 16px 0' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
             <div>
-              <span className="mono" style={{ color: 'var(--accent)', fontSize: 14 }}>
-                {item.chassis_no}
-              </span>
+              <span className="mono" style={{ color: 'var(--accent)', fontSize: 14 }}>{item.chassis_no}</span>
               <div style={{ fontSize: 16, fontWeight: 700, marginTop: 2 }}>
                 {item.product_description ?? item.product_line ?? '—'}
               </div>
-              <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-                {customerName(item)}
-              </div>
+              <div style={{ fontSize: 13, color: 'var(--muted)' }}>{item.sales_team ?? '—'}</div>
             </div>
-            <button
-              onClick={onClose}
-              style={{ padding: 6, color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer' }}
-            >
+            <button onClick={onClose} style={{ padding: 6, color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer' }}>
               <X size={20} />
             </button>
           </div>
         </div>
 
         <div style={{ padding: '16px' }}>
-          {/* From → To */}
-          <div
-            style={{
-              background: 'var(--bg)',
-              border: '1px solid var(--border)',
-              borderRadius: 12,
-              padding: '12px 14px',
-              marginBottom: 16,
-            }}
-          >
+          {/* Route */}
+          <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px', marginBottom: 16 }}>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-              Transfer Route
+              Transfer route
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 3 }}>From</div>
-                <span className="badge badge-gray">
-                  {item.current_location ?? '—'}
-                </span>
+                <span className="badge badge-gray">{item.current_location ?? '—'}</span>
               </div>
               <div style={{ flex: 1, textAlign: 'center', fontSize: 18, color: 'var(--muted)' }}>→</div>
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 3 }}>To</div>
-                <span className="badge badge-blue">
-                  {item.delivery_branch ?? '—'}
-                </span>
+                <span className="badge badge-blue">{item.delivery_branch ?? '—'}</span>
               </div>
             </div>
             {item.delivery_date && (
@@ -165,18 +147,8 @@ function AssignDriverSheet({
             )}
           </div>
 
-          {/* Current transfer status */}
           {item.transfer && item.transfer.status !== 'arrived' && (
-            <div
-              style={{
-                padding: '10px 12px',
-                background: '#FEF3C7',
-                borderRadius: 8,
-                fontSize: 12,
-                color: 'var(--amber)',
-                marginBottom: 14,
-              }}
-            >
+            <div style={{ padding: '10px 12px', background: '#FEF3C7', borderRadius: 8, fontSize: 12, color: 'var(--amber)', marginBottom: 14 }}>
               Current status:{' '}
               <strong>
                 {item.transfer.status === 'assigned'
@@ -186,26 +158,11 @@ function AssignDriverSheet({
             </div>
           )}
 
-          {/* Driver select */}
           <div style={{ marginBottom: 14 }}>
-            <label
-              style={{
-                display: 'block',
-                fontSize: 12,
-                fontWeight: 600,
-                color: 'var(--muted)',
-                marginBottom: 6,
-                textTransform: 'uppercase',
-                letterSpacing: '0.04em',
-              }}
-            >
-              {item.transfer ? 'Reassign Driver' : 'Assign Driver'}
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              {item.transfer ? 'Reassign driver' : 'Assign driver'}
             </label>
-            <select
-              className="form-input"
-              value={selectedDriver}
-              onChange={e => setSelectedDriver(e.target.value)}
-            >
+            <select className="form-input" value={selectedDriver} onChange={e => setSelectedDriver(e.target.value)}>
               <option value="">Select a driver...</option>
               {drivers.map(d => (
                 <option key={d.id} value={d.id}>
@@ -221,11 +178,7 @@ function AssignDriverSheet({
             onClick={() => { void assign() }}
             disabled={saving || !selectedDriver}
           >
-            {saving ? (
-              <RefreshCw size={15} className="spin" />
-            ) : (
-              <UserCheck size={15} />
-            )}
+            {saving ? <RefreshCw size={15} className="spin" /> : <UserCheck size={15} />}
             {saving ? 'Assigning...' : 'Assign Driver'}
           </button>
 
@@ -236,13 +189,133 @@ function AssignDriverSheet({
   )
 }
 
+// ── Delivery vehicle card ─────────────────────────────────────────────────────
+function DeliveryCard({
+  item,
+  driverMap,
+  onAssign,
+}: {
+  item: StockWithMeta
+  driverMap: Map<number, string>
+  onAssign: (item: StockWithMeta) => void
+}) {
+  const needsDriver = item.car_status === 'transfer_needed'
+  const isAssigned  = item.car_status === 'transfer_assigned'
+  const isMoving    = item.car_status === 'in_transit'
+
+  const assignedDriverName = item.transfer?.driver_id
+    ? (driverMap.get(item.transfer.driver_id) ?? null)
+    : null
+
+  return (
+    <div
+      className="card"
+      style={{
+        borderLeft: needsDriver
+          ? '3px solid var(--amber)'
+          : isMoving
+          ? '3px solid var(--accent)'
+          : undefined,
+      }}
+    >
+      <div style={{ padding: '12px 14px' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <span className="mono" style={{ color: 'var(--accent)', display: 'block', marginBottom: 2 }}>
+              {item.chassis_no}
+            </span>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {item.product_description ?? item.product_line ?? '—'}
+            </div>
+            {/* Sales team instead of customer name */}
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 1 }}>
+              {item.sales_team ?? '—'}
+            </div>
+            {/* Driver tag — only when assigned */}
+            {assignedDriverName && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 5 }}>
+                <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Driver</span>
+                <span className="badge badge-blue" style={{ fontSize: 10 }}>{assignedDriverName}</span>
+              </div>
+            )}
+          </div>
+          <div style={{ flexShrink: 0 }}>
+            {needsDriver && <span className="badge badge-amber">No driver</span>}
+            {isAssigned  && <span className="badge badge-amber">Assigned</span>}
+            {isMoving    && <span className="badge badge-blue">In transit</span>}
+          </div>
+        </div>
+
+        {/* From → To + delivery date */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
+          <span className="badge badge-gray">{item.current_location ?? '—'}</span>
+          <span style={{ fontSize: 13, color: 'var(--muted)' }}>→</span>
+          <span className="badge badge-blue">{item.delivery_branch ?? '—'}</span>
+          {item.delivery_date && (
+            <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>
+              {fmtDate(item.delivery_date)}
+            </span>
+          )}
+        </div>
+
+        <button
+          className="big-btn big-btn-primary"
+          style={{ marginTop: 10, minHeight: 40, fontSize: 13 }}
+          onClick={() => onAssign(item)}
+        >
+          <UserCheck size={14} />
+          {needsDriver ? 'Assign Driver' : 'Reassign Driver'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Placeholder card for future data ─────────────────────────────────────────
+function PlaceholderCard({ label }: { label: string }) {
+  return (
+    <div
+      className="card"
+      style={{ padding: '14px', opacity: 0.6 }}
+    >
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <span className="mono" style={{ color: 'var(--accent)', display: 'block', marginBottom: 2 }}>
+            MH12AB1234
+          </span>
+          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
+            {label} Vehicle
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 1 }}>
+            Sales team name
+          </div>
+        </div>
+        <span className="badge badge-gray">Pending</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
+        <span className="badge badge-gray">From location</span>
+        <span style={{ fontSize: 13, color: 'var(--muted)' }}>→</span>
+        <span className="badge badge-blue">To location</span>
+      </div>
+    </div>
+  )
+}
+
+// ── Top-level tab types ───────────────────────────────────────────────────────
+type MainTab = 'delivery' | 'testdrive' | 'stock'
+type StockSubTab = 'incity' | 'outcity'
+
 // ── Transfers Page ────────────────────────────────────────────────────────────
 export default function TransfersPage() {
   const { authUser, isManager, isSuperAdmin } = useAuth()
+  const { selectedBranch } = useBranch()
   const [items, setItems] = useState<StockWithMeta[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<StockWithMeta | null>(null)
+  const [mainTab, setMainTab] = useState<MainTab>('delivery')
+  const [stockSubTab, setStockSubTab] = useState<StockSubTab>('incity')
+  const [driverMap, setDriverMap] = useState<Map<number, string>>(new Map())
   const supabase = createClient()
 
   const locationName = authUser?.location?.name ?? ''
@@ -256,15 +329,22 @@ export default function TransfersPage() {
         { data: bookingData },
         { data: qcData },
         { data: transferData },
+        { data: driverData },
       ] = await Promise.all([
         buildSalesTeamMap(),
         supabase.from('matched_stock_customers').select('*'),
-        supabase
-          .from('booking')
-          .select('id, crm_opty_id, delivery_date, delivery_time, qc_check_status'),
+        supabase.from('booking').select('id, crm_opty_id, delivery_date, delivery_time, qc_check_status'),
         supabase.from('car_qc_records').select('*'),
         supabase.from('transfer_tasks').select('*'),
+        supabase.from('employees').select('id, first_name, last_name, role:roles!inner(code)').eq('roles.code', 'DRIVER'),
       ])
+
+      // build driver name map
+      const dMap = new Map<number, string>()
+      for (const d of (driverData ?? []) as Array<{ id: number; first_name: string; last_name: string | null }>) {
+        dMap.set(d.id, [d.first_name, d.last_name].filter(Boolean).join(' '))
+      }
+      setDriverMap(dMap)
 
       const bookingMap = new Map<string, BookingRow>()
       for (const b of (bookingData ?? []) as BookingRow[]) {
@@ -272,35 +352,26 @@ export default function TransfersPage() {
       }
 
       const qcMap = new Map<string, QCRecord>()
-      for (const q of (qcData ?? []) as QCRecord[]) {
-        qcMap.set(q.chassis_no, q)
-      }
+      for (const q of (qcData ?? []) as QCRecord[]) { qcMap.set(q.chassis_no, q) }
 
       const transferMap = new Map<string, TransferTask>()
-      for (const t of (transferData ?? []) as TransferTask[]) {
-        transferMap.set(t.chassis_no, t)
-      }
+      for (const t of (transferData ?? []) as TransferTask[]) { transferMap.set(t.chassis_no, t) }
 
       let stock = (stockData ?? []) as MatchedStock[]
-      stock = stock.filter(
-        s => `${s.first_name ?? ''} ${s.last_name ?? ''}`.trim().length > 0,
-      )
+      stock = stock.filter(s => `${s.first_name ?? ''} ${s.last_name ?? ''}`.trim().length > 0)
       if (!isManager && !isSuperAdmin && locationName) {
         stock = stock.filter(s => s.current_location === locationName)
       }
 
       const withMeta: StockWithMeta[] = stock
         .map(s => {
-          const booking = s.opportunity_name
-            ? bookingMap.get(s.opportunity_name)
-            : null
+          const booking = s.opportunity_name ? bookingMap.get(s.opportunity_name) : null
           const qcRecord = qcMap.get(s.chassis_no) ?? null
           const transfer = transferMap.get(s.chassis_no) ?? null
           const deliveryBranch = getSalesTeamLocation(salesTeamMap, s.sales_team)
           const deliveryDate = booking?.delivery_date ?? null
           const deliveryTime = booking?.delivery_time ?? null
-          const qcStatus =
-            qcRecord?.final_status ?? booking?.qc_check_status ?? null
+          const qcStatus = qcRecord?.final_status ?? booking?.qc_check_status ?? null
 
           return {
             ...s,
@@ -312,23 +383,12 @@ export default function TransfersPage() {
             qc_status: qcStatus,
             qc_record: qcRecord,
             transfer,
-            car_status: deriveCarStatus(
-              s.current_location,
-              deliveryBranch,
-              transfer,
-              qcStatus,
-              deliveryDate,
-            ),
+            car_status: deriveCarStatus(s.current_location, deliveryBranch, transfer, qcStatus, deliveryDate),
             delivery_branch: deliveryBranch,
           } satisfies StockWithMeta
         })
-        // only show cars that need transfer (not yet at delivery branch)
-        .filter(s =>
-          ['transfer_needed', 'transfer_assigned', 'in_transit'].includes(
-            s.car_status,
-          ),
-        )
-        // sort by delivery date ascending, nulls last
+        .filter(s => ['transfer_needed', 'transfer_assigned', 'in_transit'].includes(s.car_status))
+        .filter(s => !selectedBranch || s.delivery_branch === selectedBranch)
         .sort((a, b) => {
           if (!a.delivery_date && !b.delivery_date) return 0
           if (!a.delivery_date) return 1
@@ -340,7 +400,7 @@ export default function TransfersPage() {
     } finally {
       setLoading(false)
     }
-  }, [isManager, isSuperAdmin, locationName])
+  }, [isManager, isSuperAdmin, locationName, selectedBranch])
 
   useEffect(() => { void load() }, [load])
 
@@ -351,26 +411,24 @@ export default function TransfersPage() {
       i.chassis_no.toLowerCase().includes(q) ||
       (i.product_description ?? '').toLowerCase().includes(q) ||
       (i.product_line ?? '').toLowerCase().includes(q) ||
-      customerName(i).toLowerCase().includes(q) ||
+      (i.sales_team ?? '').toLowerCase().includes(q) ||
       (i.current_location ?? '').toLowerCase().includes(q) ||
       (i.delivery_branch ?? '').toLowerCase().includes(q)
     )
   })
 
   const needsAssign = filtered.filter(i => i.car_status === 'transfer_needed').length
-  const inTransit   = filtered.filter(i =>
-    i.car_status === 'transfer_assigned' || i.car_status === 'in_transit',
-  ).length
+  const inTransit   = filtered.filter(i => i.car_status === 'transfer_assigned' || i.car_status === 'in_transit').length
+
+  const JAIPUR_LOCS = new Set(['Jagatpura', 'Ajmer Road', 'Hawa Sadak'])
 
   return (
     <div className="fade-in">
       <div className="page-header">
         <div>
-          <h1>Assign Transfers</h1>
-          {!loading && (
-            <p className="subtitle">
-              {needsAssign} need driver · {inTransit} in transit
-            </p>
+          <h1>Transfers</h1>
+          {!loading && mainTab === 'delivery' && (
+            <p className="subtitle">{needsAssign} need driver · {inTransit} in transit</p>
           )}
         </div>
         <button
@@ -383,104 +441,127 @@ export default function TransfersPage() {
         </button>
       </div>
 
-      <div style={{ padding: '12px 16px 8px' }}>
-        <div className="search-bar">
-          <Search size={16} style={{ color: 'var(--muted)', flexShrink: 0 }} />
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Chassis, model, location..."
-          />
-          {search && (
-            <button
-              onClick={() => setSearch('')}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', padding: 0 }}
-            >
-              <X size={14} />
-            </button>
-          )}
-        </div>
+      {/* Main tabs */}
+      <div style={{ display: 'flex', background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
+        {([
+          { key: 'delivery', label: 'Delivery Vehicles' },
+          { key: 'testdrive', label: 'Test Drive' },
+          { key: 'stock', label: 'Stock Transfer' },
+        ] as { key: MainTab; label: string }[]).map(t => (
+          <button
+            key={t.key}
+            onClick={() => setMainTab(t.key)}
+            style={{
+              flex: 1,
+              padding: '10px 4px',
+              fontSize: 11,
+              fontWeight: 600,
+              border: 'none',
+              background: 'none',
+              cursor: 'pointer',
+              color: mainTab === t.key ? 'var(--accent)' : 'var(--muted)',
+              borderBottom: mainTab === t.key ? '2px solid var(--accent)' : '2px solid transparent',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
-      {loading ? (
-        <div style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-          Loading...
+      {/* Stock Transfer sub-tabs */}
+      {mainTab === 'stock' && (
+        <div style={{ display: 'flex', background: 'var(--bg)', borderBottom: '1px solid var(--border)', padding: '0 16px' }}>
+          {([
+            { key: 'incity', label: 'In City' },
+            { key: 'outcity', label: 'Out of City' },
+          ] as { key: StockSubTab; label: string }[]).map(t => (
+            <button
+              key={t.key}
+              onClick={() => setStockSubTab(t.key)}
+              style={{
+                padding: '8px 16px',
+                fontSize: 12,
+                fontWeight: 600,
+                border: 'none',
+                background: 'none',
+                cursor: 'pointer',
+                color: stockSubTab === t.key ? 'var(--text)' : 'var(--muted)',
+                borderBottom: stockSubTab === t.key ? '2px solid var(--text)' : '2px solid transparent',
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
-      ) : filtered.length === 0 ? (
-        <div style={{ margin: '16px', padding: '32px 20px', textAlign: 'center', background: 'var(--surface)', borderRadius: 12, border: '1px solid var(--border)' }}>
-          <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-            {search ? 'No cars match your search' : 'All cars are at their delivery branch'}
+      )}
+
+      {/* Delivery vehicles content */}
+      {mainTab === 'delivery' && (
+        <>
+          <div style={{ padding: '12px 16px 8px' }}>
+            <div className="search-bar">
+              <Search size={16} style={{ color: 'var(--muted)', flexShrink: 0 }} />
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Chassis, model, location..."
+              />
+              {search && (
+                <button onClick={() => setSearch('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', padding: 0 }}>
+                  <X size={14} />
+                </button>
+              )}
+            </div>
           </div>
-        </div>
-      ) : (
-        <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {filtered.map(item => {
-            const needsDriver = item.car_status === 'transfer_needed'
-            const isAssigned  = item.car_status === 'transfer_assigned'
-            const isMoving    = item.car_status === 'in_transit'
 
-            return (
-              <div
-                key={item.chassis_no}
-                className="card"
-                style={{
-                  borderLeft: needsDriver
-                    ? '3px solid var(--amber)'
-                    : isMoving
-                    ? '3px solid var(--accent)'
-                    : undefined,
-                }}
-              >
-                <div style={{ padding: '12px 14px' }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <span className="mono" style={{ color: 'var(--accent)', display: 'block', marginBottom: 2 }}>
-                        {item.chassis_no}
-                      </span>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {item.product_description ?? item.product_line ?? '—'}
-                      </div>
-                      <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 1 }}>
-                        {customerName(item)}
-                      </div>
-                    </div>
-                    <div style={{ flexShrink: 0 }}>
-                      {needsDriver && <span className="badge badge-amber">No driver</span>}
-                      {isAssigned  && <span className="badge badge-amber">Driver assigned</span>}
-                      {isMoving    && <span className="badge badge-blue">In transit</span>}
-                    </div>
-                  </div>
-
-                  {/* From → To */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
-                    <span className="badge badge-gray">
-                      {item.current_location ?? '—'}
-                    </span>
-                    <span style={{ fontSize: 13, color: 'var(--muted)' }}>→</span>
-                    <span className="badge badge-blue">
-                      {item.delivery_branch ?? '—'}
-                    </span>
-                    {item.delivery_date && (
-                      <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>
-                        {fmtDate(item.delivery_date)}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Assign / reassign button */}
-                  <button
-                    className="big-btn big-btn-primary"
-                    style={{ marginTop: 10, minHeight: 40, fontSize: 13 }}
-                    onClick={() => setSelected(item)}
-                  >
-                    <UserCheck size={14} />
-                    {needsDriver ? 'Assign Driver' : 'Reassign Driver'}
-                  </button>
-                </div>
+          {loading ? (
+            <div style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>Loading...</div>
+          ) : filtered.length === 0 ? (
+            <div style={{ margin: '16px', padding: '32px 20px', textAlign: 'center', background: 'var(--surface)', borderRadius: 12, border: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 13, color: 'var(--muted)' }}>
+                {search ? 'No cars match your search' : 'All cars are at their delivery branch'}
               </div>
-            )
-          })}
-          <div style={{ height: 8 }} />
+            </div>
+          ) : (
+            <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {filtered.map(item => (
+                <DeliveryCard
+                  key={item.chassis_no}
+                  item={item}
+                  driverMap={driverMap}
+                  onAssign={setSelected}
+                />
+              ))}
+              <div style={{ height: 8 }} />
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Test Drive content — placeholder */}
+      {mainTab === 'testdrive' && (
+        <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ padding: '10px 12px', background: '#FEF3C7', borderRadius: 8, fontSize: 12, color: 'var(--amber)', marginBottom: 4 }}>
+            Test drive data will be connected to this section in a future update.
+          </div>
+          {[1, 2, 3].map(i => (
+            <PlaceholderCard key={i} label="Test Drive" />
+          ))}
+        </div>
+      )}
+
+      {/* Stock Transfer content — placeholder with in/out subtabs */}
+      {mainTab === 'stock' && (
+        <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ padding: '10px 12px', background: '#FEF3C7', borderRadius: 8, fontSize: 12, color: 'var(--amber)', marginBottom: 4 }}>
+            {stockSubTab === 'incity'
+              ? 'In-city stock transfer data (Jagatpura, Ajmer Road, Hawa Sadak) will be connected here.'
+              : 'Out-of-city stock transfer data will be connected here.'}
+          </div>
+          {[1, 2].map(i => (
+            <PlaceholderCard key={i} label={stockSubTab === 'incity' ? 'In City Stock' : 'Out of City Stock'} />
+          ))}
         </div>
       )}
 
@@ -490,10 +571,7 @@ export default function TransfersPage() {
         <AssignDriverSheet
           item={selected}
           onClose={() => setSelected(null)}
-          onSaved={() => {
-            setSelected(null)
-            void load()
-          }}
+          onSaved={() => { setSelected(null); void load() }}
         />
       )}
     </div>

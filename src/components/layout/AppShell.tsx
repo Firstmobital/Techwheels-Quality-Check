@@ -5,9 +5,14 @@ import {
   ClipboardCheck,
   ClipboardList,
   Settings,
+  ChevronDown,
   type LucideProps,
 } from 'lucide-react'
 import { useAuth } from '@/context/auth-context'
+import { useBranch } from '@/context/branch-context'
+import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import { buildSalesTeamMap } from '@/lib/utils'
 import type { ForwardRefExoticComponent, RefAttributes } from 'react'
 
 type LucideIcon = ForwardRefExoticComponent<
@@ -22,7 +27,23 @@ interface NavItem {
 
 export default function AppShell() {
   const { isManager, isDriver, isTechnician, isSuperAdmin } = useAuth()
+  const { selectedBranch, setSelectedBranch } = useBranch()
   const location = useLocation()
+  const [branches, setBranches] = useState<string[]>([])
+
+  // Load distinct delivery branches from sales team map
+  useEffect(() => {
+    async function loadBranches() {
+      try {
+        const map = await buildSalesTeamMap()
+        const distinct = Array.from(new Set(map.values())).sort()
+        setBranches(distinct)
+      } catch {
+        // silently fail
+      }
+    }
+    void loadBranches()
+  }, [])
 
   const managerTabs: NavItem[] = [
     { to: '/home',      label: 'Dashboard', icon: LayoutDashboard },
@@ -47,12 +68,29 @@ export default function AppShell() {
   } else if (isTechnician) {
     tabs = technicianTabs
   } else {
-    // manager + super admin
     tabs = managerTabs
   }
 
   return (
     <div className="app-shell">
+      {/* Global sticky branch filter header */}
+      <div className="branch-header">
+        <span className="branch-label">Branch</span>
+        <div className="branch-select-wrap">
+          <select
+            className="branch-select"
+            value={selectedBranch ?? ''}
+            onChange={e => setSelectedBranch(e.target.value || null)}
+          >
+            <option value="">All branches</option>
+            {branches.map(b => (
+              <option key={b} value={b}>{b}</option>
+            ))}
+          </select>
+          <ChevronDown size={12} className="branch-chevron" />
+        </div>
+      </div>
+
       <div className="screen">
         <Outlet />
       </div>

@@ -5,11 +5,11 @@ import {
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/context/auth-context'
+import { useBranch } from '@/context/branch-context'
 import { useToast } from '@/components/ui/Toast'
 import {
   buildSalesTeamMap,
   deriveCarStatus,
-  customerName,
   fmtDate,
   getDeliveryStatus,
   getSalesTeamLocation,
@@ -47,7 +47,6 @@ const MIN_PHOTOS = 2
 
 type QCTab = 'pending' | 'done' | 'rejected'
 
-// ── Check state types ─────────────────────────────────────────────────────────
 interface CheckState {
   [key: string]: { passed: boolean | null; note: string; expanded: boolean }
 }
@@ -86,10 +85,9 @@ function QCSheet({
   const [remarks, setRemarks] = useState('')
   const [saving, setSaving]   = useState(false)
 
-  const fileInputRef        = useRef<HTMLInputElement>(null)
-  const activePhotoLabel    = useRef<string | null>(null)
+  const fileInputRef     = useRef<HTMLInputElement>(null)
+  const activePhotoLabel = useRef<string | null>(null)
 
-  // Pre-fill from existing record
   useEffect(() => {
     if (!item.qc_record) return
     const r  = item.qc_record
@@ -101,8 +99,6 @@ function QCSheet({
     }
     setChecks(cs)
     setRemarks(r.remarks ?? '')
-
-    // pre-fill existing photo urls
     if (r.photo_urls?.length) {
       setPhotos(prev => {
         const next = { ...prev }
@@ -116,26 +112,21 @@ function QCSheet({
     }
   }, [item.qc_record])
 
-  // ── Derived ───────────────────────────────────────────────────────────────
-  const passedCount  = Object.values(checks).filter(c => c.passed === true).length
-  const totalCount   = CHECKLIST_KEYS.length
-  const progress     = Math.round((passedCount / totalCount) * 100)
+  const passedCount   = Object.values(checks).filter(c => c.passed === true).length
+  const totalCount    = CHECKLIST_KEYS.length
+  const progress      = Math.round((passedCount / totalCount) * 100)
   const uploadedCount = Object.values(photos).filter(p => p.url !== null).length
-  const canSubmit    = uploadedCount >= MIN_PHOTOS
+  const canSubmit     = uploadedCount >= MIN_PHOTOS
 
   const atBranch =
     !item.delivery_branch ||
     item.current_location === item.delivery_branch ||
     item.transfer?.status === 'arrived'
 
-  // ── Handlers ──────────────────────────────────────────────────────────────
   function toggleCheck(key: string, value: boolean) {
     setChecks(prev => ({
       ...prev,
-      [key]: {
-        ...prev[key],
-        passed: prev[key].passed === value ? null : value,
-      },
+      [key]: { ...prev[key], passed: prev[key].passed === value ? null : value },
     }))
   }
 
@@ -171,7 +162,6 @@ function QCSheet({
     }
     setSaving(true)
     try {
-      // Upload new photos
       const photoUrls: { label: string; url: string; path: string }[] = []
 
       for (const [label, { file, url }] of Object.entries(photos)) {
@@ -180,18 +170,11 @@ function QCSheet({
           const { error: upErr } = await supabase.storage
             .from('qc-photos')
             .upload(path, file, { upsert: true })
-          if (upErr) {
-            console.warn('Photo upload failed:', upErr.message)
-            continue
-          }
-          const { data: { publicUrl } } = supabase.storage
-            .from('qc-photos')
-            .getPublicUrl(path)
+          if (upErr) { console.warn('Photo upload failed:', upErr.message); continue }
+          const { data: { publicUrl } } = supabase.storage.from('qc-photos').getPublicUrl(path)
           photoUrls.push({ label, url: publicUrl, path })
         } else if (url) {
-          // keep existing url
-          const existingPath =
-            item.qc_record?.photo_urls?.find(p => p.label === label)?.path ?? ''
+          const existingPath = item.qc_record?.photo_urls?.find(p => p.label === label)?.path ?? ''
           photoUrls.push({ label, url, path: existingPath })
         }
       }
@@ -208,7 +191,7 @@ function QCSheet({
         .upsert(
           {
             chassis_no:   item.chassis_no,
-            booking_id:   item.booking_id,      // crm_opty_id text
+            booking_id:   item.booking_id,
             inspector_id: authUser?.employee?.id ?? null,
             checklist,
             photo_urls:   photoUrls,
@@ -221,14 +204,10 @@ function QCSheet({
 
       if (saveErr) throw saveErr
 
-      // Update booking qc_check_status
       if (item.booking_id) {
         await supabase
           .from('booking')
-          .update({
-            qc_check_status:       finalStatus,
-            qc_check_completed_at: new Date().toISOString(),
-          })
+          .update({ qc_check_status: finalStatus, qc_check_completed_at: new Date().toISOString() })
           .eq('crm_opty_id', item.booking_id)
       }
 
@@ -240,9 +219,7 @@ function QCSheet({
       onSaved()
       onClose()
     } catch (err: unknown) {
-      toastError(
-        'Save failed: ' + (err instanceof Error ? err.message : 'Unknown error'),
-      )
+      toastError('Save failed: ' + (err instanceof Error ? err.message : 'Unknown error'))
     } finally {
       setSaving(false)
     }
@@ -254,7 +231,6 @@ function QCSheet({
       <div className="sheet">
         <div className="sheet-handle" />
 
-        {/* Car header */}
         <div style={{ padding: '14px 16px 0' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
             <div>
@@ -264,26 +240,21 @@ function QCSheet({
               <div style={{ fontSize: 16, fontWeight: 700, marginTop: 2 }}>
                 {item.product_description ?? item.product_line ?? '—'}
               </div>
+              {/* Sales team instead of customer name */}
               <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-                {customerName(item)}
+                {item.sales_team ?? '—'}
                 {item.delivery_date ? ` · ${fmtDate(item.delivery_date)}` : ''}
               </div>
             </div>
-            <button
-              onClick={onClose}
-              style={{ padding: 6, color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer' }}
-            >
+            <button onClick={onClose} style={{ padding: 6, color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer' }}>
               <X size={20} />
             </button>
           </div>
 
-          {/* Location vs delivery branch */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <MapPin size={12} style={{ color: 'var(--muted)' }} />
-              <span className="badge badge-gray">
-                {item.current_location ?? '—'}
-              </span>
+              <span className="badge badge-gray">{item.current_location ?? '—'}</span>
             </span>
             {item.delivery_branch && (
               <>
@@ -292,17 +263,12 @@ function QCSheet({
               </>
             )}
             {atBranch ? (
-              <span className="badge badge-green" style={{ marginLeft: 'auto' }}>
-                At branch ✓
-              </span>
+              <span className="badge badge-green" style={{ marginLeft: 'auto' }}>At branch ✓</span>
             ) : (
-              <span className="badge badge-amber" style={{ marginLeft: 'auto' }}>
-                Not at branch
-              </span>
+              <span className="badge badge-amber" style={{ marginLeft: 'auto' }}>Not at branch</span>
             )}
           </div>
 
-          {/* Progress */}
           <div style={{ marginTop: 12, marginBottom: 4 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>
               <span>Checklist progress</span>
@@ -315,10 +281,7 @@ function QCSheet({
         </div>
 
         <div style={{ padding: '16px' }}>
-          {/* Checklist */}
-          <div className="section-label" style={{ padding: '0 0 8px' }}>
-            Checklist
-          </div>
+          <div className="section-label" style={{ padding: '0 0 8px' }}>Checklist</div>
           {CHECKLIST_KEYS.map(c => {
             const state = checks[c.key]
             return (
@@ -336,9 +299,7 @@ function QCSheet({
                       <button
                         className={`check-circle${state.passed === false ? ' fail' : ''}`}
                         onClick={() => toggleCheck(c.key, false)}
-                        style={{
-                          borderColor: state.passed === false ? 'var(--red)' : undefined,
-                        }}
+                        style={{ borderColor: state.passed === false ? 'var(--red)' : undefined }}
                       >
                         {state.passed === false && <X size={14} />}
                       </button>
@@ -356,19 +317,7 @@ function QCSheet({
                       onChange={e => setNote(c.key, e.target.value)}
                       placeholder="Add note..."
                       rows={2}
-                      style={{
-                        marginTop: 8,
-                        width: '100%',
-                        padding: '8px 10px',
-                        fontSize: 13,
-                        border: '1.5px solid var(--border)',
-                        borderRadius: 8,
-                        resize: 'none',
-                        outline: 'none',
-                        fontFamily: 'inherit',
-                        background: 'var(--bg)',
-                        color: 'var(--text)',
-                      }}
+                      style={{ marginTop: 8, width: '100%', padding: '8px 10px', fontSize: 13, border: '1.5px solid var(--border)', borderRadius: 8, resize: 'none', outline: 'none', fontFamily: 'inherit', background: 'var(--bg)', color: 'var(--text)' }}
                     />
                   )}
                 </div>
@@ -376,17 +325,10 @@ function QCSheet({
             )
           })}
 
-          {/* Photos */}
           <div style={{ marginTop: 16, marginBottom: 4 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
               <div className="section-label" style={{ padding: 0 }}>Photos</div>
-              <span
-                style={{
-                  fontSize: 11,
-                  color: uploadedCount >= MIN_PHOTOS ? 'var(--green)' : 'var(--amber)',
-                  fontWeight: 600,
-                }}
-              >
+              <span style={{ fontSize: 11, color: uploadedCount >= MIN_PHOTOS ? 'var(--green)' : 'var(--amber)', fontWeight: 600 }}>
                 {uploadedCount}/{MIN_PHOTOS} required
               </span>
             </div>
@@ -394,11 +336,7 @@ function QCSheet({
               {PHOTO_LABELS.map(label => {
                 const photo = photos[label]
                 return (
-                  <div
-                    key={label}
-                    className={`photo-slot${photo.url ? ' filled' : ''}`}
-                    onClick={() => openCamera(label)}
-                  >
+                  <div key={label} className={`photo-slot${photo.url ? ' filled' : ''}`} onClick={() => openCamera(label)}>
                     {photo.url ? (
                       <img src={photo.url} alt={label} />
                     ) : (
@@ -412,17 +350,7 @@ function QCSheet({
               })}
             </div>
             {!canSubmit && (
-              <div
-                style={{
-                  marginTop: 8,
-                  padding: '7px 10px',
-                  background: '#FEF3C7',
-                  borderRadius: 8,
-                  fontSize: 12,
-                  color: 'var(--amber)',
-                  textAlign: 'center',
-                }}
-              >
+              <div style={{ marginTop: 8, padding: '7px 10px', background: '#FEF3C7', borderRadius: 8, fontSize: 12, color: 'var(--amber)', textAlign: 'center' }}>
                 Upload at least {MIN_PHOTOS} photos to enable approve / reject
               </div>
             )}
@@ -436,19 +364,8 @@ function QCSheet({
             />
           </div>
 
-          {/* Remarks */}
           <div style={{ marginTop: 16, marginBottom: 20 }}>
-            <label
-              style={{
-                display: 'block',
-                fontSize: 12,
-                fontWeight: 600,
-                color: 'var(--muted)',
-                marginBottom: 6,
-                textTransform: 'uppercase',
-                letterSpacing: '0.04em',
-              }}
-            >
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
               Remarks
             </label>
             <textarea
@@ -461,7 +378,6 @@ function QCSheet({
             />
           </div>
 
-          {/* Action buttons */}
           <div style={{ display: 'flex', gap: 10 }}>
             <button
               className="big-btn big-btn-green"
@@ -493,10 +409,11 @@ function QCSheet({
 // ── QC Page ───────────────────────────────────────────────────────────────────
 export default function QCPage() {
   const { authUser, isManager, isSuperAdmin } = useAuth()
-  const [items, setItems]     = useState<StockWithMeta[]>([])
-  const [loading, setLoading] = useState(true)
-  const [search, setSearch]   = useState('')
-  const [tab, setTab]         = useState<QCTab>('pending')
+  const { selectedBranch } = useBranch()
+  const [items, setItems]       = useState<StockWithMeta[]>([])
+  const [loading, setLoading]   = useState(true)
+  const [search, setSearch]     = useState('')
+  const [tab, setTab]           = useState<QCTab>('pending')
   const [selected, setSelected] = useState<StockWithMeta | null>(null)
   const supabase = createClient()
 
@@ -514,9 +431,7 @@ export default function QCPage() {
       ] = await Promise.all([
         buildSalesTeamMap(),
         supabase.from('matched_stock_customers').select('*'),
-        supabase
-          .from('booking')
-          .select('id, crm_opty_id, delivery_date, delivery_time, qc_check_status'),
+        supabase.from('booking').select('id, crm_opty_id, delivery_date, delivery_time, qc_check_status'),
         supabase.from('car_qc_records').select('*'),
         supabase.from('transfer_tasks').select('*'),
       ])
@@ -527,34 +442,25 @@ export default function QCPage() {
       }
 
       const qcMap = new Map<string, QCRecord>()
-      for (const q of (qcData ?? []) as QCRecord[]) {
-        qcMap.set(q.chassis_no, q)
-      }
+      for (const q of (qcData ?? []) as QCRecord[]) { qcMap.set(q.chassis_no, q) }
 
       const transferMap = new Map<string, TransferTask>()
-      for (const t of (transferData ?? []) as TransferTask[]) {
-        transferMap.set(t.chassis_no, t)
-      }
+      for (const t of (transferData ?? []) as TransferTask[]) { transferMap.set(t.chassis_no, t) }
 
       let stock = (stockData ?? []) as MatchedStock[]
-      stock = stock.filter(
-        s => `${s.first_name ?? ''} ${s.last_name ?? ''}`.trim().length > 0,
-      )
+      stock = stock.filter(s => `${s.first_name ?? ''} ${s.last_name ?? ''}`.trim().length > 0)
       if (!isManager && !isSuperAdmin && locationName) {
         stock = stock.filter(s => s.current_location === locationName)
       }
 
       const withMeta: StockWithMeta[] = stock.map(s => {
-        const booking = s.opportunity_name
-          ? bookingMap.get(s.opportunity_name)
-          : null
-        const qcRecord     = qcMap.get(s.chassis_no) ?? null
-        const transfer     = transferMap.get(s.chassis_no) ?? null
+        const booking = s.opportunity_name ? bookingMap.get(s.opportunity_name) : null
+        const qcRecord = qcMap.get(s.chassis_no) ?? null
+        const transfer = transferMap.get(s.chassis_no) ?? null
         const deliveryBranch = getSalesTeamLocation(salesTeamMap, s.sales_team)
         const deliveryDate = booking?.delivery_date ?? null
         const deliveryTime = booking?.delivery_time ?? null
-        const qcStatus     =
-          qcRecord?.final_status ?? booking?.qc_check_status ?? null
+        const qcStatus = qcRecord?.final_status ?? booking?.qc_check_status ?? null
 
         return {
           ...s,
@@ -566,24 +472,15 @@ export default function QCPage() {
           qc_status:       qcStatus,
           qc_record:       qcRecord,
           transfer,
-          car_status:      deriveCarStatus(
-            s.current_location,
-            deliveryBranch,
-            transfer,
-            qcStatus,
-            deliveryDate,
-          ),
+          car_status:      deriveCarStatus(s.current_location, deliveryBranch, transfer, qcStatus, deliveryDate),
           delivery_branch: deliveryBranch,
         } satisfies StockWithMeta
       })
 
-      // QC page only shows cars that are at their branch (or have no branch set)
-      // i.e. transfer is not the blocker
-      const qcRelevant = withMeta.filter(
-        s => !['transfer_needed', 'transfer_assigned', 'in_transit'].includes(s.car_status),
-      )
+      const qcRelevant = withMeta
+        .filter(s => !['transfer_needed', 'transfer_assigned', 'in_transit'].includes(s.car_status))
+        .filter(s => !selectedBranch || s.delivery_branch === selectedBranch)
 
-      // sort by delivery date ascending, nulls last
       qcRelevant.sort((a, b) => {
         if (!a.delivery_date && !b.delivery_date) return 0
         if (!a.delivery_date) return 1
@@ -595,15 +492,12 @@ export default function QCPage() {
     } finally {
       setLoading(false)
     }
-  }, [isManager, isSuperAdmin, locationName])
+  }, [isManager, isSuperAdmin, locationName, selectedBranch])
 
   useEffect(() => { void load() }, [load])
 
-  // ── Tab counts ────────────────────────────────────────────────────────────
   const pendingItems  = items.filter(i => i.car_status === 'qc_pending')
-  const doneItems     = items.filter(
-    i => i.car_status === 'qc_approved' || i.car_status === 'ready',
-  )
+  const doneItems     = items.filter(i => i.car_status === 'qc_approved' || i.car_status === 'ready')
   const rejectedItems = items.filter(i => i.car_status === 'qc_rejected')
 
   const tabItems =
@@ -618,7 +512,7 @@ export default function QCPage() {
       i.chassis_no.toLowerCase().includes(q) ||
       (i.product_description ?? '').toLowerCase().includes(q) ||
       (i.product_line ?? '').toLowerCase().includes(q) ||
-      customerName(i).toLowerCase().includes(q)
+      (i.sales_team ?? '').toLowerCase().includes(q)
     )
   })
 
@@ -627,9 +521,7 @@ export default function QCPage() {
       <div className="page-header">
         <div>
           <h1>Quality Check</h1>
-          {!loading && (
-            <p className="subtitle">{filtered.length} vehicles</p>
-          )}
+          {!loading && <p className="subtitle">{filtered.length} vehicles</p>}
         </div>
         <button
           className="nav-btn"
@@ -642,20 +534,12 @@ export default function QCPage() {
       </div>
 
       {/* Sub-tabs */}
-      <div
-        style={{
-          display: 'flex',
-          background: 'var(--surface)',
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        {(
-          [
-            { key: 'pending',  label: 'Pending',  count: pendingItems.length,  color: 'var(--purple)' },
-            { key: 'done',     label: 'Done',     count: doneItems.length,     color: 'var(--green)' },
-            { key: 'rejected', label: 'Rejected', count: rejectedItems.length, color: 'var(--red)' },
-          ] as { key: QCTab; label: string; count: number; color: string }[]
-        ).map(t => (
+      <div style={{ display: 'flex', background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
+        {([
+          { key: 'pending',  label: 'Pending',  count: pendingItems.length,  color: 'var(--purple)', bg: '#EDE9FE' },
+          { key: 'done',     label: 'Done',     count: doneItems.length,     color: 'var(--green)',  bg: '#DCFCE7' },
+          { key: 'rejected', label: 'Rejected', count: rejectedItems.length, color: 'var(--red)',    bg: '#FEE2E2' },
+        ] as { key: QCTab; label: string; count: number; color: string; bg: string }[]).map(t => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
@@ -676,20 +560,7 @@ export default function QCPage() {
             }}
           >
             {t.label}
-            <span
-              style={{
-                fontSize: 10,
-                fontWeight: 600,
-                padding: '1px 6px',
-                borderRadius: 99,
-                background:
-                  t.key === 'pending' ? '#EDE9FE' :
-                  t.key === 'done'    ? '#DCFCE7' : '#FEE2E2',
-                color:
-                  t.key === 'pending' ? 'var(--purple)' :
-                  t.key === 'done'    ? 'var(--green)'  : 'var(--red)',
-              }}
-            >
+            <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 99, background: t.bg, color: t.color }}>
               {t.count}
             </span>
           </button>
@@ -703,13 +574,10 @@ export default function QCPage() {
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Chassis, model, customer..."
+            placeholder="Chassis, model, sales team..."
           />
           {search && (
-            <button
-              onClick={() => setSearch('')}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', padding: 0 }}
-            >
+            <button onClick={() => setSearch('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', padding: 0 }}>
               <X size={14} />
             </button>
           )}
@@ -718,9 +586,7 @@ export default function QCPage() {
 
       {/* List */}
       {loading ? (
-        <div style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-          Loading...
-        </div>
+        <div style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>Loading...</div>
       ) : filtered.length === 0 ? (
         <div style={{ margin: '16px', padding: '32px 20px', textAlign: 'center', background: 'var(--surface)', borderRadius: 12, border: '1px solid var(--border)' }}>
           <div style={{ fontSize: 13, color: 'var(--muted)' }}>
@@ -752,36 +618,23 @@ export default function QCPage() {
                   <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {item.product_description ?? item.product_line ?? '—'}
                   </div>
+                  {/* Sales team instead of customer name */}
                   <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 1 }}>
-                    {customerName(item)}
+                    {item.sales_team ?? '—'}
                   </div>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
                   {item.delivery_date && (
-                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                      {fmtDate(item.delivery_date)}
-                    </span>
+                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>{fmtDate(item.delivery_date)}</span>
                   )}
                   {item.delivery_branch && (
-                    <span className="badge badge-blue" style={{ fontSize: 10 }}>
-                      {item.delivery_branch}
-                    </span>
+                    <span className="badge badge-blue" style={{ fontSize: 10 }}>{item.delivery_branch}</span>
                   )}
                 </div>
               </div>
 
-              {/* Rejection remarks preview */}
               {item.car_status === 'qc_rejected' && item.qc_record?.remarks && (
-                <div
-                  style={{
-                    marginTop: 8,
-                    padding: '6px 10px',
-                    background: '#FEE2E2',
-                    borderRadius: 8,
-                    fontSize: 12,
-                    color: 'var(--red)',
-                  }}
-                >
+                <div style={{ marginTop: 8, padding: '6px 10px', background: '#FEE2E2', borderRadius: 8, fontSize: 12, color: 'var(--red)' }}>
                   {item.qc_record.remarks}
                 </div>
               )}
