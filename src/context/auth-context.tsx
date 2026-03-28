@@ -59,7 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     latestRequestIdRef.current = requestId
     latestUserIdRef.current = userId
     setLoading(true)
-  console.debug(`[Auth] loadEmployee: Starting for user ${userId} (request ${requestId})`)
+    console.debug(`[Auth] loadEmployee: Starting for user ${userId} (request ${requestId})`)
 
     try {
       console.debug(`[Auth] loadEmployee: Querying employees table for auth_user_id=${userId}`)
@@ -120,11 +120,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         clearAuth()
       }
     } finally {
-        console.debug(`[Auth] loadEmployee: Setting loading=false for request ${requestId}`)
-            } else {
-              console.debug(`[Auth] loadEmployee: Skipping loading=false for stale request ${requestId} (current: ${latestRequestIdRef.current})`)
       if (latestRequestIdRef.current === requestId) {
+        console.debug(`[Auth] loadEmployee: Setting loading=false for request ${requestId}`)
         setLoading(false)
+      } else {
+        console.debug(`[Auth] loadEmployee: Skipping loading=false for stale request ${requestId} (current: ${latestRequestIdRef.current})`)
       }
     }
   }, [clearAuth, supabase])
@@ -200,15 +200,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (session?.user?.id) {
-          console.debug('[Auth] Auth state has user, calling loadEmployee')
+        console.debug('[Auth] Auth state has user, calling loadEmployee')
         try {
           await loadEmployee(session.user.id)
         } catch (err) {
           console.error('[Auth] State change load failed:', err)
-            console.debug('[Auth] Auth state has no user, clearing auth')
           clearAuth()
         }
       } else {
+        console.debug('[Auth] Auth state has no user, clearing auth')
         clearAuth()
       }
     })
