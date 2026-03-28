@@ -410,6 +410,7 @@ export default function QCPage() {
       for (const t of (transferData ?? []) as TransferTask[]) { transferMap.set(t.chassis_no, t) }
 
       let stock = (stockData ?? []) as MatchedStock[]
+      stock = stock.filter((s) => `${s.first_name ?? ''} ${s.last_name ?? ''}`.trim().length > 0)
       if (!isManager && !isSuperAdmin && locationName) {
         stock = stock.filter(s => s.current_location === locationName)
       }

@@ -50,13 +50,14 @@ export default function TasksPage() {
 
         const enriched: TaskWithStock[] = taskList.map(t => {
           const s = stockMap.get(t.chassis_no)
+          const customerName = s ? [s.first_name, s.last_name].filter(Boolean).join(' ').trim() : ''
           return {
             ...t,
             model: s?.product_description ?? s?.product_line ?? undefined,
-            customer: s ? [s.first_name, s.last_name].filter(Boolean).join(' ') : undefined,
+            customer: customerName || undefined,
           }
         })
-        setTasks(enriched)
+        setTasks(enriched.filter((t) => Boolean(t.customer)))
       } else {
         setTasks([])
       }
