@@ -74,11 +74,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .single()
 
       if (latestRequestIdRef.current !== requestId || latestUserIdRef.current !== userId) {
+        console.debug(`[Auth] Ignoring stale employee request ${requestId} for user ${userId}`)
         return
       }
 
       if (error || !emp) {
-        console.error('Employee lookup failed:', error?.message)
+        console.error('[Auth] Employee lookup failed:', error?.message)
         clearAuth()
         return
       }
@@ -95,9 +96,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         location: employee.location ?? null,
         isSuperAdmin: employee.is_super_admin ?? false,
       })
+      console.debug(`[Auth] Employee loaded: ${employee.first_name} ${employee.last_name}`)
     } catch (err) {
       if (latestRequestIdRef.current === requestId) {
-        console.error('Employee lookup failed:', err)
+        console.error('[Auth] Employee lookup exception:', err)
         clearAuth()
       }
     } finally {
@@ -109,24 +111,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true
+    let timeoutId: NodeJS.Timeout | null = null
 
     const bootstrap = async () => {
-      const { data, error } = await supabase.auth.getSession()
+      try {
+        console.debug('[Auth] Bootstrap: Starting session restoration')
+        
+        const { data, error } = await supabase.auth.getSession()
 
-      if (!mounted) return
+        if (!mounted) {
+          console.debug('[Auth] Bootstrap: Component unmounted, skipping')
+          return
+        }
 
-      if (error || !data.session?.user) {
-        clearAuth()
-        return
+        if (error) {
+          console.error('[Auth] Bootstrap: Session retrieval error:', error.message)
+          clearAuth()
+          return
+        }
+
+        if (!data.session?.user) {
+          console.debug('[Auth] Bootstrap: No session found, clearing auth')
+          clearAuth()
+          return
+        }
+
+        console.debug('[Auth] Bootstrap: Session found, loading employee data')
+        await loadEmployee(data.session.user.id)
+      } catch (err) {
+        if (mounted) {
+          console.error('[Auth] Bootstrap: Unexpected error:', err)
+          clearAuth()
+        }
       }
-
-      await loadEmployee(data.session.user.id)
     }
 
     bootstrap()
 
+    // Timeout to prevent indefinite loading state (30 seconds)
+    timeoutId = setTimeout(() => {
+      if (mounted) {
+        console.warn('[Auth] Bootstrap timeout - still loading after 30s')
+        setLoading(false)
+      }
+    }, 30000)
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, session: Session | null) => {
       if (!mounted) return
+
+      console.debug('[Auth] Auth state change:', event)
 
       if (event === 'INITIAL_SESSION') {
         return
@@ -136,7 +169,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           await loadEmployee(session.user.id)
         } catch (err) {
-          console.error('Auth state load failed:', err)
+          console.error('[Auth] State change load failed:', err)
           clearAuth()
         }
       } else {
@@ -146,9 +179,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       mounted = false
+      if (timeoutId) clearTimeout(timeoutId)
       subscription.unsubscribe()
     }
-  }, [clearAuth, loadEmployee, supabase])
+  }, [clearAuth, loadEmployee])
 
   const signIn = useCallback(async ({ email, password }: SignInInput) => {
     setLoading(true)
