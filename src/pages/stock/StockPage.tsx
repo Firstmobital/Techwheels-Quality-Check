@@ -40,7 +40,11 @@ export default function StockPage() {
     setLoading(true)
 
     const [{ data: stock }, { data: bookings }, { data: qcRecords }] = await Promise.all([
-      supabase.from('matched_stock_customers').select('*'),
+      supabase
+        .from('matched_stock_customers')
+        .select('*')
+        .not('first_name', 'is', null)
+        .neq('first_name', ''),
       supabase.from('booking').select('crm_opty_id, delivery_date, delivery_time, qc_check_status, id').not('crm_opty_id', 'is', null),
       supabase.from('car_qc_records').select('chassis_no, final_status'),
     ])
@@ -51,19 +55,21 @@ export default function StockPage() {
     const bookingMap = new Map(bookingRows.map((b) => [b.crm_opty_id, b]))
     const qcMap = new Map(qcRows.map((q) => [q.chassis_no, q]))
 
-    const enriched: StockWithDelivery[] = ((stock ?? []) as StockWithDelivery[]).map((s) => {
-      const booking = bookingMap.get(s.opportunity_name ?? '')
-      const qc = qcMap.get(s.chassis_no)
-      const delivery_date = booking?.delivery_date ?? null
-      return {
-        ...s,
-        delivery_date,
-        delivery_time: booking?.delivery_time ?? null,
-        booking_id: booking?.id ?? null,
-        delivery_status: getDeliveryStatus(delivery_date),
-        qc_status: qc?.final_status ?? booking?.qc_check_status ?? null,
-      }
-    })
+    const enriched: StockWithDelivery[] = ((stock ?? []) as StockWithDelivery[])
+      .filter((s) => (s.first_name ?? '').trim().length > 0)
+      .map((s) => {
+        const booking = bookingMap.get(s.opportunity_name ?? '')
+        const qc = qcMap.get(s.chassis_no)
+        const delivery_date = booking?.delivery_date ?? null
+        return {
+          ...s,
+          delivery_date,
+          delivery_time: booking?.delivery_time ?? null,
+          booking_id: booking?.id ?? null,
+          delivery_status: getDeliveryStatus(delivery_date),
+          qc_status: qc?.final_status ?? booking?.qc_check_status ?? null,
+        }
+      })
 
     const locs = Array.from(new Set(enriched.map((r: StockWithDelivery) => r.current_location).filter(Boolean))) as string[]
     setLocations(locs.sort())
