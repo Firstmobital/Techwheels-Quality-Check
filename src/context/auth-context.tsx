@@ -59,8 +59,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     latestRequestIdRef.current = requestId
     latestUserIdRef.current = userId
     setLoading(true)
+  console.debug(`[Auth] loadEmployee: Starting for user ${userId} (request ${requestId})`)
 
     try {
+      console.debug(`[Auth] loadEmployee: Querying employees table for auth_user_id=${userId}`)
       const { data: emp, error } = await supabase
         .from('employees')
         .select(`
@@ -78,8 +80,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return
       }
 
-      if (error || !emp) {
-        console.error('[Auth] Employee lookup failed:', error?.message)
+      if (error) {
+        console.error('[Auth] Employee lookup query error:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+        })
+        clearAuth()
+        return
+      }
+
+      if (!emp) {
+        console.error('[Auth] Employee record not found for user:', userId)
         clearAuth()
         return
       }
@@ -96,13 +109,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         location: employee.location ?? null,
         isSuperAdmin: employee.is_super_admin ?? false,
       })
-      console.debug(`[Auth] Employee loaded: ${employee.first_name} ${employee.last_name}`)
+      console.info(`[Auth] Employee loaded: ${employee.first_name} ${employee.last_name} (ID: ${employee.id})`)
     } catch (err) {
       if (latestRequestIdRef.current === requestId) {
-        console.error('[Auth] Employee lookup exception:', err)
+        console.error('[Auth] Employee lookup exception:', {
+          name: err instanceof Error ? err.name : 'Unknown',
+          message: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+        })
         clearAuth()
       }
     } finally {
+        console.debug(`[Auth] loadEmployee: Setting loading=false for request ${requestId}`)
+            } else {
+              console.debug(`[Auth] loadEmployee: Skipping loading=false for stale request ${requestId} (current: ${latestRequestIdRef.current})`)
       if (latestRequestIdRef.current === requestId) {
         setLoading(false)
       }
@@ -118,6 +138,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.debug('[Auth] Bootstrap: Starting session restoration')
         
         const { data, error } = await supabase.auth.getSession()
+        console.debug('[Auth] Bootstrap: getSession result:', {
+          hasSession: !!data.session,
+          hasUser: !!data.session?.user,
+          userId: data.session?.user?.id || 'none',
+          error: error?.message || 'none',
+        })
+
 
         if (!mounted) {
           console.debug('[Auth] Bootstrap: Component unmounted, skipping')
@@ -159,17 +186,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, session: Session | null) => {
       if (!mounted) return
 
+      console.debug('[Auth] onAuthStateChange:', {
+        event,
+        hasSession: !!session,
+        userId: session?.user?.id || 'none',
+      })
+
       console.debug('[Auth] Auth state change:', event)
 
       if (event === 'INITIAL_SESSION') {
+          console.debug('[Auth] INITIAL_SESSION event - skipping handler')
         return
       }
 
       if (session?.user?.id) {
+          console.debug('[Auth] Auth state has user, calling loadEmployee')
         try {
           await loadEmployee(session.user.id)
         } catch (err) {
           console.error('[Auth] State change load failed:', err)
+            console.debug('[Auth] Auth state has no user, clearing auth')
           clearAuth()
         }
       } else {
