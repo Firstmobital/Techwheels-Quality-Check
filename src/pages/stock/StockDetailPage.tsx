@@ -54,6 +54,8 @@ export default function StockDetailPage() {
       supabase
         .from('matched_stock_customers')
         .select('*')
+        .not('first_name', 'is', null)
+        .neq('first_name', '')
         .eq('chassis_no', decodedChassis)
         .single(),
       supabase
@@ -69,7 +71,7 @@ export default function StockDetailPage() {
         .single(),
     ])
 
-    if (!stockRow) {
+    if (!stockRow || ((stockRow.first_name ?? '').trim().length === 0)) {
       setLoading(false)
       return
     }
