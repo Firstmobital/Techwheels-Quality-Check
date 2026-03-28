@@ -28,39 +28,49 @@ export default function TasksPage() {
         .from('transfer_tasks')
         .select('*')
         .eq('driver_id', driverId)
-        .neq('status', 'arrived')
+        .in('status', ['assigned', 'picked_up'])
         .order('assigned_at', { ascending: false })
 
       if (error) throw error
 
       const taskList = (data ?? []) as TransferTask[]
 
-      // Enrich with model and customer from matched_stock_customers
-      if (taskList.length > 0) {
-        const chassisNos = taskList.map(t => t.chassis_no)
-        const { data: stockData } = await supabase
-          .from('matched_stock_customers')
-          .select('chassis_no, product_description, product_line, first_name, last_name')
-          .in('chassis_no', chassisNos)
+      if (taskList.length === 0) {
+        setTasks([])
+        return
+      }
 
-        const stockMap = new Map<string, { product_description: string | null; product_line: string | null; first_name: string | null; last_name: string | null }>()
-        for (const s of (stockData ?? [])) {
-          stockMap.set(s.chassis_no, s)
-        }
+      const chassisNos = taskList.map(t => t.chassis_no)
+      const { data: stockData } = await supabase
+        .from('matched_stock_customers')
+        .select('chassis_no, product_description, product_line, first_name, last_name')
+        .in('chassis_no', chassisNos)
 
-        const enriched: TaskWithStock[] = taskList.map(t => {
+      const stockMap = new Map<string, {
+        product_description: string | null
+        product_line: string | null
+        first_name: string | null
+        last_name: string | null
+      }>()
+      for (const s of stockData ?? []) {
+        stockMap.set(s.chassis_no, s)
+      }
+
+      const enriched: TaskWithStock[] = taskList
+        .map(t => {
           const s = stockMap.get(t.chassis_no)
-          const customerName = s ? [s.first_name, s.last_name].filter(Boolean).join(' ').trim() : ''
+          const customer = s
+            ? [s.first_name, s.last_name].filter(Boolean).join(' ').trim()
+            : ''
           return {
             ...t,
             model: s?.product_description ?? s?.product_line ?? undefined,
-            customer: customerName || undefined,
+            customer: customer || undefined,
           }
         })
-        setTasks(enriched.filter((t) => Boolean(t.customer)))
-      } else {
-        setTasks([])
-      }
+        .filter(t => Boolean(t.customer))
+
+      setTasks(enriched)
     } catch (err) {
       toastError('Could not load tasks')
       console.error(err)
@@ -73,40 +83,59 @@ export default function TasksPage() {
 
   async function markPickedUp(task: TaskWithStock) {
     setUpdating(task.id)
-    const { error } = await supabase
-      .from('transfer_tasks')
-      .update({ status: 'picked_up', picked_up_at: new Date().toISOString() })
-      .eq('id', task.id)
-    setUpdating(null)
-    if (error) { toastError('Update failed'); return }
-    success('Marked as picked up!')
-    void load()
+    try {
+      const { error } = await supabase
+        .from('transfer_tasks')
+        .update({
+          status: 'picked_up',
+          picked_up_at: new Date().toISOString(),
+        })
+        .eq('id', task.id)
+      if (error) throw error
+      success('Marked as picked up!')
+      void load()
+    } catch {
+      toastError('Update failed — please try again')
+    } finally {
+      setUpdating(null)
+    }
   }
 
   async function markArrived(task: TaskWithStock) {
     setUpdating(task.id)
-    const { error } = await supabase
-      .from('transfer_tasks')
-      .update({ status: 'arrived', arrived_at: new Date().toISOString() })
-      .eq('id', task.id)
-    setUpdating(null)
-    if (error) { toastError('Update failed'); return }
-    success('Marked as arrived!')
-    void load()
+    try {
+      const { error } = await supabase
+        .from('transfer_tasks')
+        .update({
+          status: 'arrived',
+          arrived_at: new Date().toISOString(),
+        })
+        .eq('id', task.id)
+      if (error) throw error
+      success('Marked as arrived!')
+      void load()
+    } catch {
+      toastError('Update failed — please try again')
+    } finally {
+      setUpdating(null)
+    }
   }
 
   return (
     <div className="fade-in">
-      {/* Header */}
       <div className="page-header">
         <div>
           <h1>My Tasks</h1>
-          {tasks.length > 0 && <p className="subtitle">{tasks.length} active transfer{tasks.length > 1 ? 's' : ''}</p>}
+          {!loading && tasks.length > 0 && (
+            <p className="subtitle">
+              {tasks.length} active transfer{tasks.length > 1 ? 's' : ''}
+            </p>
+          )}
         </div>
         <button
-          onClick={() => { void load() }}
           className="nav-btn"
           style={{ minWidth: 36, minHeight: 36 }}
+          onClick={() => { void load() }}
           disabled={loading}
         >
           <RefreshCw size={18} className={loading ? 'spin' : ''} />
@@ -119,89 +148,106 @@ export default function TasksPage() {
             Loading...
           </div>
         ) : tasks.length === 0 ? (
-          <div style={{ margin: '32px 16px', textAlign: 'center' }}>
-            <Truck size={40} strokeWidth={1.5} style={{ color: 'var(--border)', margin: '0 auto 12px' }} />
-            <p style={{ fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>No active tasks</p>
-            <p style={{ fontSize: 13, color: 'var(--muted)' }}>You have no pending transfers right now</p>
+          <div style={{ margin: '32px 16px', textAlign: 'center', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '32px 20px' }}>
+            <Truck
+              size={40}
+              strokeWidth={1.5}
+              style={{ color: 'var(--border)', margin: '0 auto 12px' }}
+            />
+            <p style={{ fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>
+              No active tasks
+            </p>
+            <p style={{ fontSize: 13, color: 'var(--muted)' }}>
+              You have no pending transfers right now
+            </p>
           </div>
         ) : (
-          tasks.map(task => {
-            const isUpdating = updating === task.id
-            const canPickup = task.status === 'assigned'
-            const canArrive = task.status === 'picked_up'
+          <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {tasks.map(task => {
+              const isUpdating = updating === task.id
+              const canPickup  = task.status === 'assigned'
+              const canArrive  = task.status === 'picked_up'
 
-            return (
-              <div key={task.id} className="task-card">
-                <div style={{ padding: '12px 14px' }}>
-                  {/* Chassis + status */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <span className="mono" style={{ color: 'var(--accent)', fontSize: 13 }}>
-                      {task.chassis_no}
-                    </span>
-                    <span className={`badge ${task.status === 'assigned' ? 'badge-amber' : 'badge-blue'}`}>
-                      {task.status === 'assigned' ? 'Pickup pending' : 'In transit'}
-                    </span>
+              return (
+                <div key={task.id} className="task-card">
+                  <div style={{ padding: '12px 14px' }}>
+                    {/* Status row */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <span className="mono" style={{ color: 'var(--accent)', fontSize: 13 }}>
+                        {task.chassis_no}
+                      </span>
+                      <span
+                        className={`badge ${
+                          task.status === 'assigned' ? 'badge-amber' : 'badge-blue'
+                        }`}
+                      >
+                        {task.status === 'assigned' ? 'Pickup pending' : 'In transit'}
+                      </span>
+                    </div>
+
+                    {/* Model + customer */}
+                    {task.model && (
+                      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 2 }}>
+                        {task.model}
+                      </div>
+                    )}
+                    {task.customer && (
+                      <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 10 }}>
+                        {task.customer}
+                      </div>
+                    )}
+
+                    {/* From → To */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <MapPin size={12} style={{ color: 'var(--red)', flexShrink: 0 }} />
+                        <span className="badge badge-gray">{task.from_location}</span>
+                      </span>
+                      <ArrowRight size={14} style={{ color: 'var(--muted)', flexShrink: 0 }} />
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <MapPin size={12} style={{ color: 'var(--green)', flexShrink: 0 }} />
+                        <span className="badge badge-blue">{task.to_location}</span>
+                      </span>
+                    </div>
                   </div>
 
-                  {/* Model + customer */}
-                  {task.model && (
-                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 2 }}>
-                      {task.model}
-                    </div>
-                  )}
-                  {task.customer && (
-                    <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 10 }}>
-                      {task.customer}
-                    </div>
-                  )}
-
-                  {/* From → To */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <MapPin size={12} style={{ color: 'var(--red)' }} />
-                      <span className="badge badge-red">{task.from_location}</span>
-                    </span>
-                    <ArrowRight size={14} style={{ color: 'var(--muted)', flexShrink: 0 }} />
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <MapPin size={12} style={{ color: 'var(--green)' }} />
-                      <span className="badge badge-green">{task.to_location}</span>
-                    </span>
+                  {/* Action buttons */}
+                  <div className="task-actions">
+                    <button
+                      className="task-action-btn"
+                      onClick={() => { void markPickedUp(task) }}
+                      disabled={!canPickup || isUpdating}
+                      style={!canPickup ? { opacity: 0.3 } : {}}
+                    >
+                      {isUpdating && canPickup ? (
+                        <RefreshCw size={14} className="spin" />
+                      ) : (
+                        <Truck size={14} />
+                      )}
+                      Mark Picked Up
+                    </button>
+                    <button
+                      className="task-action-btn"
+                      onClick={() => { void markArrived(task) }}
+                      disabled={!canArrive || isUpdating}
+                      style={!canArrive ? { opacity: 0.3 } : {}}
+                    >
+                      {isUpdating && canArrive ? (
+                        <RefreshCw size={14} className="spin" />
+                      ) : (
+                        <CheckCircle size={14} />
+                      )}
+                      Mark Arrived
+                    </button>
                   </div>
                 </div>
-
-                <div className="task-actions">
-                  <button
-                    className="task-action-btn"
-                    onClick={() => { void markPickedUp(task) }}
-                    disabled={!canPickup || isUpdating}
-                    style={!canPickup ? { opacity: 0.3 } : {}}
-                  >
-                    {isUpdating && canPickup ? (
-                      <RefreshCw size={14} className="spin" />
-                    ) : (
-                      <Truck size={14} />
-                    )}
-                    Mark Picked Up
-                  </button>
-                  <button
-                    className="task-action-btn"
-                    onClick={() => { void markArrived(task) }}
-                    disabled={!canArrive || isUpdating}
-                    style={!canArrive ? { opacity: 0.3 } : {}}
-                  >
-                    {isUpdating && canArrive ? (
-                      <RefreshCw size={14} className="spin" />
-                    ) : (
-                      <CheckCircle size={14} />
-                    )}
-                    Mark Arrived
-                  </button>
-                </div>
-              </div>
-            )
-          })
+              )
+            })}
+          </div>
         )}
       </div>
+
+      <div style={{ height: 16 }} />
     </div>
   )
 }

@@ -1,19 +1,28 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { Search, X, Camera, ChevronDown, ChevronUp, Check, RefreshCw } from 'lucide-react'
+import {
+  Search, X, Camera, ChevronDown, ChevronUp,
+  Check, RefreshCw, MapPin,
+} from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/context/auth-context'
 import { useToast } from '@/components/ui/Toast'
 import {
   buildSalesTeamMap,
   deriveCarStatus,
-  carStatusLabel,
-  carStatusBadgeClass,
   customerName,
   fmtDate,
   getDeliveryStatus,
 } from '@/lib/utils'
-import type { MatchedStock, QCRecord, QCChecklistItem, TransferTask, StockWithMeta } from '@/types'
+import type {
+  MatchedStock,
+  QCRecord,
+  QCChecklistItem,
+  TransferTask,
+  StockWithMeta,
+  BookingRow,
+} from '@/types'
 
+// ── Constants ─────────────────────────────────────────────────────────────────
 const CHECKLIST_KEYS: { key: string; label: string }[] = [
   { key: 'engine',       label: 'Engine' },
   { key: 'ac',           label: 'Air Conditioning' },
@@ -29,8 +38,15 @@ const CHECKLIST_KEYS: { key: string; label: string }[] = [
   { key: 'windshield',   label: 'Windshield' },
 ]
 
-const PHOTO_LABELS = ['Front', 'Rear', 'Left side', 'Right side', 'Interior', 'Engine bay']
+const PHOTO_LABELS = [
+  'Front', 'Rear', 'Left side', 'Right side', 'Interior', 'Engine bay',
+]
 
+const MIN_PHOTOS = 2
+
+type QCTab = 'pending' | 'done' | 'rejected'
+
+// ── Check state types ─────────────────────────────────────────────────────────
 interface CheckState {
   [key: string]: { passed: boolean | null; note: string; expanded: boolean }
 }
@@ -62,41 +78,63 @@ function QCSheet({
   const { success, error: toastError } = useToast()
   const supabase = createClient()
 
-  const [inspector, setInspector] = useState(
-    authUser ? [authUser.employee.first_name, authUser.employee.last_name].filter(Boolean).join(' ') : ''
-  )
-  const [checks, setChecks] = useState<CheckState>(initChecklist)
-  const [photos, setPhotos] = useState<PhotoState>(
-    Object.fromEntries(PHOTO_LABELS.map(l => [l, { file: null, url: null }]))
+  const [checks, setChecks]   = useState<CheckState>(initChecklist)
+  const [photos, setPhotos]   = useState<PhotoState>(
+    Object.fromEntries(PHOTO_LABELS.map(l => [l, { file: null, url: null }])),
   )
   const [remarks, setRemarks] = useState('')
-  const [saving, setSaving] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const activePhotoLabel = useRef<string | null>(null)
+  const [saving, setSaving]   = useState(false)
+
+  const fileInputRef        = useRef<HTMLInputElement>(null)
+  const activePhotoLabel    = useRef<string | null>(null)
 
   // Pre-fill from existing record
   useEffect(() => {
-    if (item.qc_record) {
-      const r = item.qc_record
-      const cs: CheckState = initChecklist()
-      for (const c of (r.checklist ?? [])) {
-        if (cs[c.key]) {
-          cs[c.key] = { passed: c.passed, note: c.note ?? '', expanded: false }
-        }
+    if (!item.qc_record) return
+    const r  = item.qc_record
+    const cs = initChecklist()
+    for (const c of r.checklist ?? []) {
+      if (cs[c.key]) {
+        cs[c.key] = { passed: c.passed, note: c.note ?? '', expanded: false }
       }
-      setChecks(cs)
-      setRemarks(r.remarks ?? '')
+    }
+    setChecks(cs)
+    setRemarks(r.remarks ?? '')
+
+    // pre-fill existing photo urls
+    if (r.photo_urls?.length) {
+      setPhotos(prev => {
+        const next = { ...prev }
+        for (const p of r.photo_urls) {
+          if (next[p.label] !== undefined) {
+            next[p.label] = { file: null, url: p.url }
+          }
+        }
+        return next
+      })
     }
   }, [item.qc_record])
 
-  const passedCount = Object.values(checks).filter(c => c.passed === true).length
-  const totalCount = CHECKLIST_KEYS.length
-  const progress = Math.round((passedCount / totalCount) * 100)
+  // ── Derived ───────────────────────────────────────────────────────────────
+  const passedCount  = Object.values(checks).filter(c => c.passed === true).length
+  const totalCount   = CHECKLIST_KEYS.length
+  const progress     = Math.round((passedCount / totalCount) * 100)
+  const uploadedCount = Object.values(photos).filter(p => p.url !== null).length
+  const canSubmit    = uploadedCount >= MIN_PHOTOS
 
+  const atBranch =
+    !item.delivery_branch ||
+    item.current_location === item.delivery_branch ||
+    item.transfer?.status === 'arrived'
+
+  // ── Handlers ──────────────────────────────────────────────────────────────
   function toggleCheck(key: string, value: boolean) {
     setChecks(prev => ({
       ...prev,
-      [key]: { ...prev[key], passed: prev[key].passed === value ? null : value },
+      [key]: {
+        ...prev[key],
+        passed: prev[key].passed === value ? null : value,
+      },
     }))
   }
 
@@ -117,7 +155,7 @@ function QCSheet({
   }
 
   function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
+    const file  = e.target.files?.[0]
     const label = activePhotoLabel.current
     if (!file || !label) return
     const url = URL.createObjectURL(file)
@@ -126,47 +164,58 @@ function QCSheet({
   }
 
   async function submit(finalStatus: 'approved' | 'rejected') {
-    if (!inspector.trim()) { toastError('Inspector name is required'); return }
+    if (!canSubmit) {
+      toastError(`Please upload at least ${MIN_PHOTOS} photos before submitting`)
+      return
+    }
     setSaving(true)
     try {
-      // Upload photos
+      // Upload new photos
       const photoUrls: { label: string; url: string; path: string }[] = []
-      for (const [label, { file }] of Object.entries(photos)) {
+
+      for (const [label, { file, url }] of Object.entries(photos)) {
         if (file) {
           const path = `qc/${item.chassis_no}/${label.replace(/ /g, '_')}_${Date.now()}`
           const { error: upErr } = await supabase.storage
             .from('qc-photos')
             .upload(path, file, { upsert: true })
-          if (upErr) { console.warn('Photo upload failed:', upErr.message); continue }
-          const { data: { publicUrl } } = supabase.storage.from('qc-photos').getPublicUrl(path)
+          if (upErr) {
+            console.warn('Photo upload failed:', upErr.message)
+            continue
+          }
+          const { data: { publicUrl } } = supabase.storage
+            .from('qc-photos')
+            .getPublicUrl(path)
           photoUrls.push({ label, url: publicUrl, path })
-        } else if (item.qc_record?.photo_urls) {
-          const existing = item.qc_record.photo_urls.find(p => p.label === label)
-          if (existing) photoUrls.push(existing)
+        } else if (url) {
+          // keep existing url
+          const existingPath =
+            item.qc_record?.photo_urls?.find(p => p.label === label)?.path ?? ''
+          photoUrls.push({ label, url, path: existingPath })
         }
       }
 
       const checklist: QCChecklistItem[] = CHECKLIST_KEYS.map(c => ({
-        key: c.key,
-        label: c.label,
+        key:    c.key,
+        label:  c.label,
         passed: checks[c.key].passed ?? false,
-        note: checks[c.key].note,
+        note:   checks[c.key].note,
       }))
 
       const { error: saveErr } = await supabase
         .from('car_qc_records')
         .upsert(
           {
-            chassis_no: item.chassis_no,
-            booking_id: item.booking_id,
+            chassis_no:   item.chassis_no,
+            booking_id:   item.booking_id,      // crm_opty_id text
             inspector_id: authUser?.employee?.id ?? null,
             checklist,
-            photo_urls: photoUrls,
+            photo_urls:   photoUrls,
             remarks,
             final_status: finalStatus,
-            checked_at: new Date().toISOString(),
+            checked_at:   new Date().toISOString(),
           },
-          { onConflict: 'chassis_no' }
+          { onConflict: 'chassis_no' },
         )
 
       if (saveErr) throw saveErr
@@ -175,15 +224,24 @@ function QCSheet({
       if (item.booking_id) {
         await supabase
           .from('booking')
-          .update({ qc_check_status: finalStatus, qc_check_completed_at: new Date().toISOString() })
+          .update({
+            qc_check_status:       finalStatus,
+            qc_check_completed_at: new Date().toISOString(),
+          })
           .eq('crm_opty_id', item.booking_id)
       }
 
-      success(`QC ${finalStatus === 'approved' ? 'approved' : 'rejected'} successfully!`)
+      success(
+        finalStatus === 'approved'
+          ? 'QC approved successfully!'
+          : 'QC rejected — car flagged for re-inspection',
+      )
       onSaved()
       onClose()
     } catch (err: unknown) {
-      toastError('Save failed: ' + (err instanceof Error ? err.message : 'Unknown error'))
+      toastError(
+        'Save failed: ' + (err instanceof Error ? err.message : 'Unknown error'),
+      )
     } finally {
       setSaving(false)
     }
@@ -199,11 +257,16 @@ function QCSheet({
         <div style={{ padding: '14px 16px 0' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
             <div>
-              <span className="mono" style={{ color: 'var(--accent)', fontSize: 14 }}>{item.chassis_no}</span>
+              <span className="mono" style={{ color: 'var(--accent)', fontSize: 14 }}>
+                {item.chassis_no}
+              </span>
               <div style={{ fontSize: 16, fontWeight: 700, marginTop: 2 }}>
                 {item.product_description ?? item.product_line ?? '—'}
               </div>
-              <div style={{ fontSize: 13, color: 'var(--muted)' }}>{customerName(item)}</div>
+              <div style={{ fontSize: 13, color: 'var(--muted)' }}>
+                {customerName(item)}
+                {item.delivery_date ? ` · ${fmtDate(item.delivery_date)}` : ''}
+              </div>
             </div>
             <button
               onClick={onClose}
@@ -213,10 +276,35 @@ function QCSheet({
             </button>
           </div>
 
-          {/* Progress bar */}
+          {/* Location vs delivery branch */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <MapPin size={12} style={{ color: 'var(--muted)' }} />
+              <span className="badge badge-gray">
+                {item.current_location ?? '—'}
+              </span>
+            </span>
+            {item.delivery_branch && (
+              <>
+                <span style={{ fontSize: 13, color: 'var(--muted)' }}>→</span>
+                <span className="badge badge-blue">{item.delivery_branch}</span>
+              </>
+            )}
+            {atBranch ? (
+              <span className="badge badge-green" style={{ marginLeft: 'auto' }}>
+                At branch ✓
+              </span>
+            ) : (
+              <span className="badge badge-amber" style={{ marginLeft: 'auto' }}>
+                Not at branch
+              </span>
+            )}
+          </div>
+
+          {/* Progress */}
           <div style={{ marginTop: 12, marginBottom: 4 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>
-              <span>QC Progress</span>
+              <span>Checklist progress</span>
               <span>{passedCount}/{totalCount} passed</span>
             </div>
             <div className="progress-track">
@@ -226,82 +314,81 @@ function QCSheet({
         </div>
 
         <div style={{ padding: '16px' }}>
-          {/* Inspector */}
-          <div style={{ marginBottom: 14 }}>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-              Inspector Name
-            </label>
-            <input
-              className="form-input"
-              value={inspector}
-              onChange={e => setInspector(e.target.value)}
-              placeholder="Your name"
-            />
-          </div>
-
           {/* Checklist */}
-          <div style={{ marginBottom: 14 }}>
-            <div className="section-label" style={{ padding: '0 0 8px' }}>Checklist</div>
-            {CHECKLIST_KEYS.map(c => {
-              const state = checks[c.key]
-              return (
-                <div key={c.key} className="check-item">
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ fontSize: 14, fontWeight: 500 }}>{c.label}</span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        {/* Pass button */}
-                        <button
-                          className={`check-circle${state.passed === true ? ' pass' : ''}`}
-                          onClick={() => toggleCheck(c.key, true)}
-                        >
-                          {state.passed === true && <Check size={14} />}
-                        </button>
-                        {/* Fail button */}
-                        <button
-                          className={`check-circle${state.passed === false ? ' fail' : ''}`}
-                          onClick={() => toggleCheck(c.key, false)}
-                          style={{ borderColor: state.passed === false ? 'var(--red)' : undefined }}
-                        >
-                          {state.passed === false && <X size={14} />}
-                        </button>
-                        {/* Toggle note */}
-                        <button
-                          onClick={() => toggleNote(c.key)}
-                          style={{ padding: 4, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)' }}
-                        >
-                          {state.expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                        </button>
-                      </div>
-                    </div>
-                    {state.expanded && (
-                      <textarea
-                        value={state.note}
-                        onChange={e => setNote(c.key, e.target.value)}
-                        placeholder="Add note..."
-                        rows={2}
-                        style={{
-                          marginTop: 8,
-                          width: '100%',
-                          padding: '8px 10px',
-                          fontSize: 13,
-                          border: '1.5px solid var(--border)',
-                          borderRadius: 8,
-                          resize: 'none',
-                          outline: 'none',
-                          fontFamily: 'inherit',
-                        }}
-                      />
-                    )}
-                  </div>
-                </div>
-              )
-            })}
+          <div className="section-label" style={{ padding: '0 0 8px' }}>
+            Checklist
           </div>
+          {CHECKLIST_KEYS.map(c => {
+            const state = checks[c.key]
+            return (
+              <div key={c.key} className="check-item">
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 14, fontWeight: 500 }}>{c.label}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <button
+                        className={`check-circle${state.passed === true ? ' pass' : ''}`}
+                        onClick={() => toggleCheck(c.key, true)}
+                      >
+                        {state.passed === true && <Check size={14} />}
+                      </button>
+                      <button
+                        className={`check-circle${state.passed === false ? ' fail' : ''}`}
+                        onClick={() => toggleCheck(c.key, false)}
+                        style={{
+                          borderColor: state.passed === false ? 'var(--red)' : undefined,
+                        }}
+                      >
+                        {state.passed === false && <X size={14} />}
+                      </button>
+                      <button
+                        onClick={() => toggleNote(c.key)}
+                        style={{ padding: 4, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)' }}
+                      >
+                        {state.expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                      </button>
+                    </div>
+                  </div>
+                  {state.expanded && (
+                    <textarea
+                      value={state.note}
+                      onChange={e => setNote(c.key, e.target.value)}
+                      placeholder="Add note..."
+                      rows={2}
+                      style={{
+                        marginTop: 8,
+                        width: '100%',
+                        padding: '8px 10px',
+                        fontSize: 13,
+                        border: '1.5px solid var(--border)',
+                        borderRadius: 8,
+                        resize: 'none',
+                        outline: 'none',
+                        fontFamily: 'inherit',
+                        background: 'var(--bg)',
+                        color: 'var(--text)',
+                      }}
+                    />
+                  )}
+                </div>
+              </div>
+            )
+          })}
 
           {/* Photos */}
-          <div style={{ marginBottom: 14 }}>
-            <div className="section-label" style={{ padding: '0 0 8px' }}>Photos</div>
+          <div style={{ marginTop: 16, marginBottom: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div className="section-label" style={{ padding: 0 }}>Photos</div>
+              <span
+                style={{
+                  fontSize: 11,
+                  color: uploadedCount >= MIN_PHOTOS ? 'var(--green)' : 'var(--amber)',
+                  fontWeight: 600,
+                }}
+              >
+                {uploadedCount}/{MIN_PHOTOS} required
+              </span>
+            </div>
             <div className="photo-grid">
               {PHOTO_LABELS.map(label => {
                 const photo = photos[label]
@@ -323,6 +410,21 @@ function QCSheet({
                 )
               })}
             </div>
+            {!canSubmit && (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: '7px 10px',
+                  background: '#FEF3C7',
+                  borderRadius: 8,
+                  fontSize: 12,
+                  color: 'var(--amber)',
+                  textAlign: 'center',
+                }}
+              >
+                Upload at least {MIN_PHOTOS} photos to enable approve / reject
+              </div>
+            )}
             <input
               ref={fileInputRef}
               type="file"
@@ -334,27 +436,37 @@ function QCSheet({
           </div>
 
           {/* Remarks */}
-          <div style={{ marginBottom: 20 }}>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          <div style={{ marginTop: 16, marginBottom: 20 }}>
+            <label
+              style={{
+                display: 'block',
+                fontSize: 12,
+                fontWeight: 600,
+                color: 'var(--muted)',
+                marginBottom: 6,
+                textTransform: 'uppercase',
+                letterSpacing: '0.04em',
+              }}
+            >
               Remarks
             </label>
             <textarea
               value={remarks}
               onChange={e => setRemarks(e.target.value)}
-              placeholder="Any additional notes..."
+              placeholder="Any additional notes or reason for rejection..."
               rows={3}
               className="form-input"
               style={{ resize: 'none' }}
             />
           </div>
 
-          {/* Buttons */}
+          {/* Action buttons */}
           <div style={{ display: 'flex', gap: 10 }}>
             <button
               className="big-btn big-btn-green"
               onClick={() => { void submit('approved') }}
-              disabled={saving}
-              style={{ flex: 1 }}
+              disabled={saving || !canSubmit}
+              style={{ flex: 1, opacity: canSubmit ? 1 : 0.45 }}
             >
               {saving ? <RefreshCw size={16} className="spin" /> : <Check size={16} />}
               Approve
@@ -362,8 +474,8 @@ function QCSheet({
             <button
               className="big-btn big-btn-red"
               onClick={() => { void submit('rejected') }}
-              disabled={saving}
-              style={{ flex: 1 }}
+              disabled={saving || !canSubmit}
+              style={{ flex: 1, opacity: canSubmit ? 1 : 0.45 }}
             >
               {saving ? <RefreshCw size={16} className="spin" /> : <X size={16} />}
               Reject
@@ -380,9 +492,10 @@ function QCSheet({
 // ── QC Page ───────────────────────────────────────────────────────────────────
 export default function QCPage() {
   const { authUser, isManager, isSuperAdmin } = useAuth()
-  const [items, setItems] = useState<StockWithMeta[]>([])
+  const [items, setItems]     = useState<StockWithMeta[]>([])
   const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
+  const [search, setSearch]   = useState('')
+  const [tab, setTab]         = useState<QCTab>('pending')
   const [selected, setSelected] = useState<StockWithMeta | null>(null)
   const supabase = createClient()
 
@@ -391,53 +504,95 @@ export default function QCPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [salesTeamMap, { data: stockData }, { data: bookingData }, { data: qcData }, { data: transferData }] =
-        await Promise.all([
-          buildSalesTeamMap(),
-          supabase.from('matched_stock_customers').select('*'),
-          supabase.from('booking').select('crm_opty_id, delivery_date, delivery_time, qc_check_status'),
-          supabase.from('car_qc_records').select('*'),
-          supabase.from('transfer_tasks').select('*'),
-        ])
+      const [
+        salesTeamMap,
+        { data: stockData },
+        { data: bookingData },
+        { data: qcData },
+        { data: transferData },
+      ] = await Promise.all([
+        buildSalesTeamMap(),
+        supabase.from('matched_stock_customers').select('*'),
+        supabase
+          .from('booking')
+          .select('id, crm_opty_id, delivery_date, delivery_time, qc_check_status'),
+        supabase.from('car_qc_records').select('*'),
+        supabase.from('transfer_tasks').select('*'),
+      ])
 
-      const bookingMap = new Map<string, { crm_opty_id: string | null; delivery_date: string | null; delivery_time: string | null; qc_check_status: string | null }>()
-      for (const b of (bookingData ?? [])) { if (b.crm_opty_id) bookingMap.set(b.crm_opty_id, b) }
+      const bookingMap = new Map<string, BookingRow>()
+      for (const b of (bookingData ?? []) as BookingRow[]) {
+        if (b.crm_opty_id) bookingMap.set(b.crm_opty_id, b)
+      }
 
       const qcMap = new Map<string, QCRecord>()
-      for (const q of (qcData ?? []) as QCRecord[]) { qcMap.set(q.chassis_no, q) }
+      for (const q of (qcData ?? []) as QCRecord[]) {
+        qcMap.set(q.chassis_no, q)
+      }
 
       const transferMap = new Map<string, TransferTask>()
-      for (const t of (transferData ?? []) as TransferTask[]) { transferMap.set(t.chassis_no, t) }
+      for (const t of (transferData ?? []) as TransferTask[]) {
+        transferMap.set(t.chassis_no, t)
+      }
 
       let stock = (stockData ?? []) as MatchedStock[]
-      stock = stock.filter((s) => `${s.first_name ?? ''} ${s.last_name ?? ''}`.trim().length > 0)
+      stock = stock.filter(
+        s => `${s.first_name ?? ''} ${s.last_name ?? ''}`.trim().length > 0,
+      )
       if (!isManager && !isSuperAdmin && locationName) {
         stock = stock.filter(s => s.current_location === locationName)
       }
 
       const withMeta: StockWithMeta[] = stock.map(s => {
-        const booking = s.opportunity_name ? bookingMap.get(s.opportunity_name) : null
-        const qcRecord = qcMap.get(s.chassis_no) ?? null
-        const transfer = transferMap.get(s.chassis_no) ?? null
-        const bookingBranch = s.sales_team ? (salesTeamMap.get(s.sales_team) ?? null) : null
+        const booking = s.opportunity_name
+          ? bookingMap.get(s.opportunity_name)
+          : null
+        const qcRecord     = qcMap.get(s.chassis_no) ?? null
+        const transfer     = transferMap.get(s.chassis_no) ?? null
+        const deliveryBranch = s.sales_team
+          ? (salesTeamMap.get(s.sales_team) ?? null)
+          : null
         const deliveryDate = booking?.delivery_date ?? null
         const deliveryTime = booking?.delivery_time ?? null
-        const qcStatus = qcRecord?.final_status ?? booking?.qc_check_status ?? null
+        const qcStatus     =
+          qcRecord?.final_status ?? booking?.qc_check_status ?? null
+
         return {
           ...s,
-          delivery_date: deliveryDate,
-          delivery_time: deliveryTime,
-          booking_id: s.opportunity_name ?? null,
+          booking_uuid:    booking?.id ?? null,
+          booking_id:      s.opportunity_name ?? null,
+          delivery_date:   deliveryDate,
+          delivery_time:   deliveryTime,
           delivery_status: getDeliveryStatus(deliveryDate),
-          qc_status: qcStatus,
-          qc_record: qcRecord,
+          qc_status:       qcStatus,
+          qc_record:       qcRecord,
           transfer,
-          car_status: deriveCarStatus(s, bookingBranch, transfer, qcStatus, deliveryDate),
-          booking_branch: bookingBranch,
-        }
+          car_status:      deriveCarStatus(
+            s.current_location,
+            deliveryBranch,
+            transfer,
+            qcStatus,
+            deliveryDate,
+          ),
+          delivery_branch: deliveryBranch,
+        } satisfies StockWithMeta
       })
 
-      setItems(withMeta)
+      // QC page only shows cars that are at their branch (or have no branch set)
+      // i.e. transfer is not the blocker
+      const qcRelevant = withMeta.filter(
+        s => !['transfer_needed', 'transfer_assigned', 'in_transit'].includes(s.car_status),
+      )
+
+      // sort by delivery date ascending, nulls last
+      qcRelevant.sort((a, b) => {
+        if (!a.delivery_date && !b.delivery_date) return 0
+        if (!a.delivery_date) return 1
+        if (!b.delivery_date) return -1
+        return a.delivery_date.localeCompare(b.delivery_date)
+      })
+
+      setItems(qcRelevant)
     } finally {
       setLoading(false)
     }
@@ -445,7 +600,19 @@ export default function QCPage() {
 
   useEffect(() => { void load() }, [load])
 
-  const filtered = items.filter(i => {
+  // ── Tab counts ────────────────────────────────────────────────────────────
+  const pendingItems  = items.filter(i => i.car_status === 'qc_pending')
+  const doneItems     = items.filter(
+    i => i.car_status === 'qc_approved' || i.car_status === 'ready',
+  )
+  const rejectedItems = items.filter(i => i.car_status === 'qc_rejected')
+
+  const tabItems =
+    tab === 'pending'  ? pendingItems  :
+    tab === 'done'     ? doneItems     :
+                         rejectedItems
+
+  const filtered = tabItems.filter(i => {
     if (!search) return true
     const q = search.toLowerCase()
     return (
@@ -460,45 +627,122 @@ export default function QCPage() {
     <div className="fade-in">
       <div className="page-header">
         <div>
-          <h1>QC Check</h1>
-          {!loading && <p className="subtitle">{filtered.length} vehicles</p>}
+          <h1>Quality Check</h1>
+          {!loading && (
+            <p className="subtitle">{filtered.length} vehicles</p>
+          )}
         </div>
         <button
-          onClick={() => { void load() }}
           className="nav-btn"
           style={{ minWidth: 36, minHeight: 36 }}
+          onClick={() => { void load() }}
           disabled={loading}
         >
           <RefreshCw size={18} className={loading ? 'spin' : ''} />
         </button>
       </div>
 
-      <div style={{ padding: '12px 16px 8px' }}>
+      {/* Sub-tabs */}
+      <div
+        style={{
+          display: 'flex',
+          background: 'var(--surface)',
+          borderBottom: '1px solid var(--border)',
+        }}
+      >
+        {(
+          [
+            { key: 'pending',  label: 'Pending',  count: pendingItems.length,  color: 'var(--purple)' },
+            { key: 'done',     label: 'Done',     count: doneItems.length,     color: 'var(--green)' },
+            { key: 'rejected', label: 'Rejected', count: rejectedItems.length, color: 'var(--red)' },
+          ] as { key: QCTab; label: string; count: number; color: string }[]
+        ).map(t => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            style={{
+              flex: 1,
+              padding: '10px 4px',
+              fontSize: 12,
+              fontWeight: 600,
+              border: 'none',
+              background: 'none',
+              cursor: 'pointer',
+              color: tab === t.key ? t.color : 'var(--muted)',
+              borderBottom: tab === t.key ? `2px solid ${t.color}` : '2px solid transparent',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+            }}
+          >
+            {t.label}
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 600,
+                padding: '1px 6px',
+                borderRadius: 99,
+                background:
+                  t.key === 'pending' ? '#EDE9FE' :
+                  t.key === 'done'    ? '#DCFCE7' : '#FEE2E2',
+                color:
+                  t.key === 'pending' ? 'var(--purple)' :
+                  t.key === 'done'    ? 'var(--green)'  : 'var(--red)',
+              }}
+            >
+              {t.count}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {/* Search */}
+      <div style={{ padding: '10px 16px 6px' }}>
         <div className="search-bar">
           <Search size={16} style={{ color: 'var(--muted)', flexShrink: 0 }} />
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search chassis, model, customer..."
+            placeholder="Chassis, model, customer..."
           />
           {search && (
-            <button onClick={() => setSearch('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', padding: 0 }}>
+            <button
+              onClick={() => setSearch('')}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', padding: 0 }}
+            >
               <X size={14} />
             </button>
           )}
         </div>
       </div>
 
+      {/* List */}
       {loading ? (
-        <div style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>Loading...</div>
+        <div style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+          Loading...
+        </div>
       ) : filtered.length === 0 ? (
-        <div style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>No vehicles found</div>
+        <div style={{ margin: '16px', padding: '32px 20px', textAlign: 'center', background: 'var(--surface)', borderRadius: 12, border: '1px solid var(--border)' }}>
+          <div style={{ fontSize: 13, color: 'var(--muted)' }}>
+            {search ? 'No vehicles match your search' : `No ${tab} vehicles`}
+          </div>
+        </div>
       ) : (
         <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {filtered.map(item => (
             <button
               key={item.chassis_no}
-              style={{ textAlign: 'left', cursor: 'pointer', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, width: '100%', padding: '12px 14px' }}
+              style={{
+                textAlign: 'left',
+                cursor: 'pointer',
+                background: 'var(--surface)',
+                border: `1px solid ${item.car_status === 'qc_rejected' ? 'var(--red)' : 'var(--border)'}`,
+                borderLeft: item.car_status === 'qc_rejected' ? '3px solid var(--red)' : undefined,
+                borderRadius: 12,
+                width: '100%',
+                padding: '12px 14px',
+              }}
               onClick={() => setSelected(item)}
             >
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
@@ -506,22 +750,45 @@ export default function QCPage() {
                   <span className="mono" style={{ color: 'var(--accent)', display: 'block', marginBottom: 2 }}>
                     {item.chassis_no}
                   </span>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {item.product_description ?? item.product_line ?? '—'}
                   </div>
-                  <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 1 }}>{customerName(item)}</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 1 }}>
+                    {customerName(item)}
+                  </div>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
-                  <span className={`badge ${carStatusBadgeClass(item.car_status)}`}>
-                    {carStatusLabel(item.car_status)}
-                  </span>
                   {item.delivery_date && (
-                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>{fmtDate(item.delivery_date)}</span>
+                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                      {fmtDate(item.delivery_date)}
+                    </span>
+                  )}
+                  {item.delivery_branch && (
+                    <span className="badge badge-blue" style={{ fontSize: 10 }}>
+                      {item.delivery_branch}
+                    </span>
                   )}
                 </div>
               </div>
+
+              {/* Rejection remarks preview */}
+              {item.car_status === 'qc_rejected' && item.qc_record?.remarks && (
+                <div
+                  style={{
+                    marginTop: 8,
+                    padding: '6px 10px',
+                    background: '#FEE2E2',
+                    borderRadius: 8,
+                    fontSize: 12,
+                    color: 'var(--red)',
+                  }}
+                >
+                  {item.qc_record.remarks}
+                </div>
+              )}
             </button>
           ))}
+          <div style={{ height: 8 }} />
         </div>
       )}
 

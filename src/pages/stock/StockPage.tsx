@@ -77,7 +77,7 @@ function StockSheet({
         chassis_no: item.chassis_no,
         driver_id: parseInt(selectedDriver),
         from_location: item.current_location ?? '',
-        to_location: item.booking_branch ?? '',
+        to_location: item.delivery_branch ?? '',
         status: 'assigned' as const,
         assigned_at: new Date().toISOString(),
       }
@@ -137,8 +137,8 @@ function StockSheet({
           <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
             <span className={`badge ${carStatusBadgeClass(item.car_status)}`}>{carStatusLabel(item.car_status)}</span>
             {item.current_location && <span className="badge badge-gray">{item.current_location}</span>}
-            {item.booking_branch && item.booking_branch !== item.current_location && (
-              <span className="badge badge-blue">→ {item.booking_branch}</span>
+            {item.delivery_branch && item.delivery_branch !== item.current_location && (
+              <span className="badge badge-blue">→ {item.delivery_branch}</span>
             )}
           </div>
         </div>
@@ -152,7 +152,7 @@ function StockSheet({
                 Assign Transfer Driver
               </div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>
-                From: <strong>{item.current_location ?? '—'}</strong> → To: <strong>{item.booking_branch ?? '—'}</strong>
+                From: <strong>{item.current_location ?? '—'}</strong> → To: <strong>{item.delivery_branch ?? '—'}</strong>
               </div>
               <select
                 className="form-input"
@@ -258,12 +258,12 @@ export default function StockPage() {
         await Promise.all([
           buildSalesTeamMap(),
           supabase.from('matched_stock_customers').select('*'),
-          supabase.from('booking').select('crm_opty_id, delivery_date, delivery_time, qc_check_status'),
+          supabase.from('booking').select('id, crm_opty_id, delivery_date, delivery_time, qc_check_status'),
           supabase.from('car_qc_records').select('*'),
           supabase.from('transfer_tasks').select('*'),
         ])
 
-      const bookingMap = new Map<string, { crm_opty_id: string | null; delivery_date: string | null; delivery_time: string | null; qc_check_status: string | null }>()
+      const bookingMap = new Map<string, { id: string; crm_opty_id: string | null; delivery_date: string | null; delivery_time: string | null; qc_check_status: string | null }>()
       for (const b of (bookingData ?? [])) { if (b.crm_opty_id) bookingMap.set(b.crm_opty_id, b) }
 
       const qcMap = new Map<string, QCRecord>()
@@ -288,6 +288,7 @@ export default function StockPage() {
         const qcStatus = qcRecord?.final_status ?? booking?.qc_check_status ?? null
         return {
           ...s,
+          booking_uuid: booking?.id ?? null,
           delivery_date: deliveryDate,
           delivery_time: deliveryTime,
           booking_id: s.opportunity_name ?? null,
@@ -295,8 +296,8 @@ export default function StockPage() {
           qc_status: qcStatus,
           qc_record: qcRecord,
           transfer,
-          car_status: deriveCarStatus(s, bookingBranch, transfer, qcStatus, deliveryDate),
-          booking_branch: bookingBranch,
+          car_status: deriveCarStatus(s.current_location ?? null, bookingBranch, transfer, qcStatus, deliveryDate),
+          delivery_branch: bookingBranch,
         }
       })
 

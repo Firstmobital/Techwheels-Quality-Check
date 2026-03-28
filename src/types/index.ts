@@ -28,7 +28,6 @@ export interface Employee {
   location_id: number | null
   photo_url: string | null
   employee_code: string | null
-  // joined
   role?: Role
   location?: Location
 }
@@ -56,40 +55,26 @@ export interface MatchedStock {
   cust_rank: number | null
   ageing_base_date: string | null
   ageing_days: number | null
-  // joined from booking
-  delivery_date?: string | null
-  delivery_time?: string | null
-  booking_id?: string | null
-  // joined from car_qc_records
-  qc_status?: string | null
-  qc_checked_at?: string | null
 }
 
-export interface Booking {
-  id: string
+export interface BookingRow {
+  id: string           // UUID — needed to store in car_qc_records.booking_id... wait no, we use crm_opty_id now
   crm_opty_id: string | null
-  child_vc: string | null
   delivery_date: string | null
   delivery_time: string | null
-  expected_delivery_date: string | null
   qc_check_status: string | null
-  qc_check_completed_at: string | null
-  qc_check_completed_by: string | null
-  customer_name: string
-  customer_phone: string
 }
 
 export interface QCRecord {
   id: string
   chassis_no: string
-  booking_id: string | null
+  booking_id: string | null   // now text = crm_opty_id
   inspector_id: number | null
   checklist: QCChecklistItem[]
   photo_urls: QCPhoto[]
   remarks: string | null
   final_status: 'approved' | 'rejected' | null
   checked_at: string | null
-  // joined
   inspector?: Pick<Employee, 'first_name' | 'last_name'>
 }
 
@@ -106,40 +91,28 @@ export interface QCPhoto {
   path: string
 }
 
-// ── App-level types ───────────────────────────────────────────────────────────
-
-export interface AuthUser {
-  employee: Employee
-  role: Role
-  location: Location | null
-  isSuperAdmin: boolean
-}
-
-export type DeliveryDateStatus = 'today' | 'tomorrow' | 'this_week' | 'future' | 'overdue' | null
-
-export interface StockWithDelivery extends MatchedStock {
-  delivery_date: string | null
-  delivery_time: string | null
-  delivery_status: DeliveryDateStatus
-  qc_status: string | null
-}
-
-// ── New mobile-app types ──────────────────────────────────────────────────────
-
-export type TransferStatus = 'assigned' | 'picked_up' | 'arrived'
-
 export interface TransferTask {
   id: string
   chassis_no: string
   driver_id: number
   from_location: string
   to_location: string
-  status: TransferStatus
+  status: 'assigned' | 'picked_up' | 'arrived'
   assigned_at: string
   picked_up_at: string | null
   arrived_at: string | null
   notes: string | null
 }
+
+// ── Derived / app-level types ─────────────────────────────────────────────────
+
+export type DeliveryDateStatus =
+  | 'today'
+  | 'tomorrow'
+  | 'this_week'
+  | 'future'
+  | 'overdue'
+  | null
 
 export type CarStatus =
   | 'transfer_needed'
@@ -152,13 +125,25 @@ export type CarStatus =
   | 'ready'
 
 export interface StockWithMeta extends MatchedStock {
+  // from booking join
+  booking_uuid: string | null      // booking.id UUID — used for QC record save
+  booking_id: string | null        // crm_opty_id text — used for booking updates
   delivery_date: string | null
   delivery_time: string | null
-  booking_id: string | null
+  // derived
   delivery_status: DeliveryDateStatus
   qc_status: string | null
   qc_record: QCRecord | null
   transfer: TransferTask | null
   car_status: CarStatus
-  booking_branch: string | null
+  delivery_branch: string | null   // resolved from sales_team → employees → locations
 }
+
+export interface AuthUser {
+  employee: Employee
+  role: Role
+  location: Location | null
+  isSuperAdmin: boolean
+}
+
+export type StockWithDelivery = StockWithMeta

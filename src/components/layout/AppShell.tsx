@@ -1,9 +1,18 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import { Home, ClipboardList, CheckSquare, Car, Settings, type LucideProps } from 'lucide-react'
+import {
+  LayoutDashboard,
+  ArrowLeftRight,
+  ClipboardCheck,
+  ClipboardList,
+  Settings,
+  type LucideProps,
+} from 'lucide-react'
 import { useAuth } from '@/context/auth-context'
 import type { ForwardRefExoticComponent, RefAttributes } from 'react'
 
-type LucideIcon = ForwardRefExoticComponent<Omit<LucideProps, 'ref'> & RefAttributes<SVGSVGElement>>
+type LucideIcon = ForwardRefExoticComponent<
+  Omit<LucideProps, 'ref'> & RefAttributes<SVGSVGElement>
+>
 
 interface NavItem {
   to: string
@@ -15,27 +24,31 @@ export default function AppShell() {
   const { isManager, isDriver, isTechnician, isSuperAdmin } = useAuth()
   const location = useLocation()
 
-  const allTabs: NavItem[] = [
-    { to: '/home',     label: 'Home',     icon: Home },
-    { to: '/tasks',    label: 'My Tasks', icon: ClipboardList },
-    { to: '/qc',       label: 'QC',       icon: CheckSquare },
-    { to: '/stock',    label: 'Stock',    icon: Car },
+  const managerTabs: NavItem[] = [
+    { to: '/home',      label: 'Dashboard', icon: LayoutDashboard },
+    { to: '/transfers', label: 'Transfers', icon: ArrowLeftRight },
+    { to: '/qc',        label: 'QC',        icon: ClipboardCheck },
+    { to: '/settings',  label: 'Settings',  icon: Settings },
+  ]
+
+  const technicianTabs: NavItem[] = [
+    { to: '/qc',       label: 'QC',       icon: ClipboardCheck },
     { to: '/settings', label: 'Settings', icon: Settings },
   ]
 
-  // Role-based tab visibility
+  const driverTabs: NavItem[] = [
+    { to: '/tasks',    label: 'My Tasks', icon: ClipboardList },
+    { to: '/settings', label: 'Settings', icon: Settings },
+  ]
+
   let tabs: NavItem[]
   if (isDriver) {
-    // Drivers see only My Tasks
-    tabs = allTabs.filter(t => t.to === '/tasks')
+    tabs = driverTabs
   } else if (isTechnician) {
-    // Technicians see QC, Stock, My Tasks
-    tabs = allTabs.filter(t => ['/tasks', '/qc', '/stock'].includes(t.to))
-  } else if (isManager || isSuperAdmin) {
-    // Managers don't see My Tasks
-    tabs = allTabs.filter(t => t.to !== '/tasks')
+    tabs = technicianTabs
   } else {
-    tabs = allTabs.filter(t => t.to !== '/tasks')
+    // manager + super admin
+    tabs = managerTabs
   }
 
   return (
@@ -44,23 +57,23 @@ export default function AppShell() {
         <Outlet />
       </div>
 
-      {tabs.length > 1 && (
-        <nav className="bottom-nav">
-          {tabs.map(({ to, label, icon: Icon }) => {
-            const isActive = location.pathname === to || location.pathname.startsWith(to + '/')
-            return (
-              <NavLink
-                key={to}
-                to={to}
-                className={`nav-btn${isActive ? ' active' : ''}`}
-              >
-                <Icon size={22} />
-                <span>{label}</span>
-              </NavLink>
-            )
-          })}
-        </nav>
-      )}
+      <nav className="bottom-nav">
+        {tabs.map(({ to, label, icon: Icon }) => {
+          const isActive =
+            location.pathname === to ||
+            location.pathname.startsWith(to + '/')
+          return (
+            <NavLink
+              key={to}
+              to={to}
+              className={`nav-btn${isActive ? ' active' : ''}`}
+            >
+              <Icon size={22} />
+              <span>{label}</span>
+            </NavLink>
+          )
+        })}
+      </nav>
     </div>
   )
 }

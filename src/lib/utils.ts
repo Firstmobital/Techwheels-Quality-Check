@@ -1,7 +1,20 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
-import { format, isToday, isTomorrow, differenceInDays, parseISO, isWithinInterval, addHours } from 'date-fns'
-import type { CarStatus, DeliveryDateStatus, MatchedStock, TransferTask } from '@/types'
+import {
+  format,
+  isToday,
+  isTomorrow,
+  differenceInDays,
+  parseISO,
+  isWithinInterval,
+  addHours,
+} from 'date-fns'
+import type {
+  CarStatus,
+  DeliveryDateStatus,
+  MatchedStock,
+  TransferTask,
+} from '@/types'
 import { getSupabaseBrowserClient } from '@/lib/supabase/client'
 
 // ── Tailwind class merger ─────────────────────────────────────────────────────
@@ -21,7 +34,6 @@ export function fmtDate(date: string | null | undefined): string {
 
 export function fmtTime(time: string | null | undefined): string {
   if (!time) return '—'
-  // time comes as HH:MM:SS from postgres
   const [h, m] = time.split(':')
   const hour = parseInt(h)
   const ampm = hour >= 12 ? 'PM' : 'AM'
@@ -29,12 +41,17 @@ export function fmtTime(time: string | null | undefined): string {
   return `${h12}:${m} ${ampm}`
 }
 
-export function fmtDateTime(date: string | null, time: string | null): string {
+export function fmtDateTime(
+  date: string | null,
+  time: string | null,
+): string {
   if (!date) return '—'
   return `${fmtDate(date)}${time ? ', ' + fmtTime(time) : ''}`
 }
 
-export function getDeliveryStatus(date: string | null | undefined): DeliveryDateStatus {
+export function getDeliveryStatus(
+  date: string | null | undefined,
+): DeliveryDateStatus {
   if (!date) return null
   try {
     const d = parseISO(date)
@@ -60,7 +77,9 @@ export function deliveryStatusLabel(status: DeliveryDateStatus): string {
   }
 }
 
-export function isWithin48Hours(date: string | null | undefined): boolean {
+export function isWithin48Hours(
+  date: string | null | undefined,
+): boolean {
   if (!date) return false
   try {
     const d = parseISO(date)
@@ -71,95 +90,142 @@ export function isWithin48Hours(date: string | null | undefined): boolean {
   }
 }
 
-// ── Ageing helpers ────────────────────────────────────────────────────────────
-export function ageingClass(days: number | null): string {
-  if (days === null) return 'text-slate-400'
-  if (days <= 15) return 'text-emerald-600 bg-emerald-50'
-  if (days <= 30) return 'text-amber-600 bg-amber-50'
-  return 'text-red-600 bg-red-50'
-}
-
 // ── Customer name ─────────────────────────────────────────────────────────────
-export function customerName(row: Pick<MatchedStock, 'first_name' | 'last_name'>): string {
-  return [row.first_name, row.last_name].filter(Boolean).join(' ') || '—'
+export function customerName(
+  row: Pick<MatchedStock, 'first_name' | 'last_name'>,
+): string {
+  return (
+    [row.first_name, row.last_name].filter(Boolean).join(' ') || '—'
+  )
 }
 
 // ── Initials ──────────────────────────────────────────────────────────────────
 export function initials(first: string, last?: string | null): string {
-  const f = first.charAt(0).toUpperCase()
-  const l = last ? last.charAt(0).toUpperCase() : ''
-  return f + l
+  return (
+    first.charAt(0).toUpperCase() +
+    (last ? last.charAt(0).toUpperCase() : '')
+  )
 }
 
-// ── WhatsApp URL builder ──────────────────────────────────────────────────────
-export function buildWhatsAppUrl(phone: string, message: string): string {
+// ── WhatsApp URL ──────────────────────────────────────────────────────────────
+export function buildWhatsAppUrl(
+  phone: string,
+  message: string,
+): string {
   const cleaned = phone.replace(/\D/g, '')
-  const withCountry = cleaned.startsWith('91') ? cleaned : `91${cleaned}`
+  const withCountry = cleaned.startsWith('91')
+    ? cleaned
+    : `91${cleaned}`
   return `https://wa.me/${withCountry}?text=${encodeURIComponent(message)}`
 }
 
 // ── Truncate ──────────────────────────────────────────────────────────────────
-export function truncate(str: string | null | undefined, n: number): string {
+export function truncate(
+  str: string | null | undefined,
+  n: number,
+): string {
   if (!str) return '—'
   return str.length > n ? str.slice(0, n) + '…' : str
 }
 
-// ── Sales team map ────────────────────────────────────────────────────────────
+// ── Sales team → delivery branch map ─────────────────────────────────────────
 /**
- * Fetches all employees and returns a Map<"First Last", locationName>
+ * Returns Map<"First Last", locationName>
+ *
+ * Chain: matched_stock.sales_team = "First Last"
+ *   → employees row with matching first_name + last_name
+ *   → employees.location_id
+ *   → locations.name  =  delivery branch
  */
 export async function buildSalesTeamMap(): Promise<Map<string, string>> {
   const supabase = getSupabaseBrowserClient()
+
   const { data, error } = await supabase
     .from('employees')
-    .select('id, first_name, last_name, location:locations(name)')
+    .select('first_name, last_name, location:locations!employees_location_id_fkey(name)')
 
-  if (error || !data) return new Map()
+  if (error || !data) {
+    console.error('[buildSalesTeamMap] query failed:', error?.message)
+    return new Map()
+  }
 
   const map = new Map<string, string>()
-  for (const emp of (data as unknown) as Array<{ first_name: string; last_name: string | null; location: { name: string } | null }>) {
-    const fullName = [emp.first_name, emp.last_name].filter(Boolean).join(' ')
+
+  for (const emp of data as unknown as Array<{
+    first_name: string
+    last_name: string | null
+    location: { name: string } | null
+  }>) {
+    const fullName = [emp.first_name, emp.last_name]
+      .filter(Boolean)
+      .join(' ')
+      .trim()
+
     if (fullName && emp.location?.name) {
       map.set(fullName, emp.location.name)
     }
   }
+
   return map
 }
 
 // ── Car status derivation ─────────────────────────────────────────────────────
+/**
+ * Full status chain:
+ *
+ * 1. No delivery branch known            → qc_pending (can't determine transfer)
+ * 2. Car not at delivery branch
+ *    a. No transfer task                 → transfer_needed
+ *    b. Transfer assigned                → transfer_assigned
+ *    c. Transfer picked up               → in_transit
+ *    d. Transfer arrived                 → treat as at_branch, fall through
+ * 3. Car at delivery branch (or arrived)
+ *    a. No QC record                     → qc_pending
+ *    b. QC rejected/failed               → qc_rejected
+ *    c. QC approved/completed            → ready (if delivery date set) or qc_approved
+ */
 export function deriveCarStatus(
-  stock: Pick<MatchedStock, 'current_location'>,
-  bookingBranch: string | null,
+  currentLocation: string | null,
+  deliveryBranch: string | null,
   transfer: TransferTask | null,
   qcStatus: string | null,
-  _deliveryDate: string | null
+  deliveryDate: string | null,
 ): CarStatus {
+  // No delivery branch — can't route, show as pending
+  if (!deliveryBranch) {
+    if (!qcStatus) return 'qc_pending'
+    if (qcStatus === 'rejected' || qcStatus === 'failed') return 'qc_rejected'
+    if (qcStatus === 'approved' || qcStatus === 'completed')
+      return deliveryDate ? 'ready' : 'qc_approved'
+    return 'qc_pending'
+  }
+
   const atBranch =
-    !bookingBranch ||
-    stock.current_location === bookingBranch ||
+    currentLocation === deliveryBranch ||
     transfer?.status === 'arrived'
 
   if (!atBranch) {
     if (!transfer) return 'transfer_needed'
     if (transfer.status === 'assigned') return 'transfer_assigned'
-    return 'in_transit'
+    if (transfer.status === 'picked_up') return 'in_transit'
+    // arrived handled above via atBranch
+    return 'transfer_assigned'
   }
 
-  // at branch
+  // At branch — check QC
   if (!qcStatus) return 'qc_pending'
   if (qcStatus === 'rejected' || qcStatus === 'failed') return 'qc_rejected'
-  if (qcStatus === 'approved' || qcStatus === 'completed') {
-    if (_deliveryDate) return 'ready'
-    return 'qc_approved'
-  }
+  if (qcStatus === 'approved' || qcStatus === 'completed')
+    return deliveryDate ? 'ready' : 'qc_approved'
+
   return 'qc_pending'
 }
 
-// ── Car status display ────────────────────────────────────────────────────────
+// ── Car status display helpers ────────────────────────────────────────────────
 export function carStatusLabel(status: CarStatus): string {
   switch (status) {
     case 'transfer_needed':   return 'Transfer Needed'
-    case 'transfer_assigned': return 'Transfer Assigned'
+    case 'transfer_assigned': return 'Driver Assigned'
     case 'in_transit':        return 'In Transit'
     case 'at_branch':         return 'At Branch'
     case 'qc_pending':        return 'QC Pending'
@@ -180,4 +246,12 @@ export function carStatusBadgeClass(status: CarStatus): string {
     case 'qc_rejected':       return 'badge-red'
     case 'ready':             return 'badge-green'
   }
+}
+
+// ── Ageing class ──────────────────────────────────────────────────────────────
+export function ageingClass(days: number | null): string {
+  if (days === null) return 'text-slate-400'
+  if (days <= 15) return 'text-emerald-600 bg-emerald-50'
+  if (days <= 30) return 'text-amber-600 bg-amber-50'
+  return 'text-red-600 bg-red-50'
 }

@@ -6,7 +6,7 @@ import AppShell from '@/components/layout/AppShell'
 import HomePage from '@/pages/home/HomePage'
 import TasksPage from '@/pages/tasks/TasksPage'
 import QCPage from '@/pages/qc/QCPage'
-import StockPage from '@/pages/stock/StockPage'
+import TransfersPage from '@/pages/transfers/TransfersPage'
 import SettingsPage from '@/pages/settings/SettingsPage'
 
 function PublicOnlyRoute() {
@@ -14,7 +14,15 @@ function PublicOnlyRoute() {
 
   if (loading) {
     return (
-      <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div
+        style={{
+          minHeight: '100vh',
+          background: 'var(--bg)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
         <p style={{ fontSize: 14, color: 'var(--muted)' }}>Loading...</p>
       </div>
     )
@@ -25,11 +33,19 @@ function PublicOnlyRoute() {
 }
 
 function RootRedirect() {
-  const { authUser, loading, isManager, isSuperAdmin, isDriver } = useAuth()
+  const { authUser, loading, isDriver, isSuperAdmin, isManager } = useAuth()
 
   if (loading) {
     return (
-      <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div
+        style={{
+          minHeight: '100vh',
+          background: 'var(--bg)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
         <p style={{ fontSize: 14, color: 'var(--muted)' }}>Loading...</p>
       </div>
     )
@@ -38,7 +54,7 @@ function RootRedirect() {
   if (!authUser) return <Navigate to="/login" replace />
   if (isDriver) return <Navigate to="/tasks" replace />
   if (isSuperAdmin || isManager) return <Navigate to="/home" replace />
-  // Technician
+  // technician
   return <Navigate to="/qc" replace />
 }
 
@@ -51,11 +67,11 @@ export function AppRouter() {
         <Route path="/" element={<RootRedirect />} />
 
         <Route element={<AppShell />}>
-          <Route path="/home"     element={<HomePage />} />
-          <Route path="/tasks"    element={<TasksPage />} />
-          <Route path="/qc"       element={<QCPage />} />
-          <Route path="/stock"    element={<StockPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/home"      element={<HomePage />} />
+          <Route path="/transfers" element={<TransfersPage />} />
+          <Route path="/qc"        element={<QCPage />} />
+          <Route path="/tasks"     element={<TasksPage />} />
+          <Route path="/settings"  element={<SettingsPage />} />
         </Route>
       </Route>
 
