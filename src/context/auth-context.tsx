@@ -45,52 +45,66 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const supabase = getSupabaseBrowserClient()
   const latestUserIdRef = useRef<string | null>(null)
+  const latestRequestIdRef = useRef(0)
 
   const clearAuth = useCallback(() => {
+    latestRequestIdRef.current += 1
     latestUserIdRef.current = null
     setAuthUser(null)
     setLoading(false)
   }, [])
 
   const loadEmployee = useCallback(async (userId: string) => {
+    const requestId = latestRequestIdRef.current + 1
+    latestRequestIdRef.current = requestId
     latestUserIdRef.current = userId
     setLoading(true)
 
-    const { data: emp, error } = await supabase
-      .from('employees')
-      .select(`
-        id, auth_user_id, first_name, last_name, email,
-        mobile, role_id, location_id, photo_url, employee_code,
-        is_super_admin,
-        role:roles ( id, name, code, department_id, is_active ),
-        location:locations ( id, name, address, city )
-      `)
-      .eq('auth_user_id', userId)
-      .single()
+    try {
+      const { data: emp, error } = await supabase
+        .from('employees')
+        .select(`
+          id, auth_user_id, first_name, last_name, email,
+          mobile, role_id, location_id, photo_url, employee_code,
+          is_super_admin,
+          role:roles ( id, name, code, department_id, is_active ),
+          location:locations ( id, name, address, city )
+        `)
+        .eq('auth_user_id', userId)
+        .single()
 
-    if (error || !emp) {
-      console.error('Employee lookup failed:', error?.message)
-      clearAuth()
-      return
+      if (latestRequestIdRef.current !== requestId || latestUserIdRef.current !== userId) {
+        return
+      }
+
+      if (error || !emp) {
+        console.error('Employee lookup failed:', error?.message)
+        clearAuth()
+        return
+      }
+
+      const employee = emp as unknown as Employee & {
+        role: Role
+        location: Location | null
+        is_super_admin?: boolean
+      }
+
+      setAuthUser({
+        employee,
+        role: employee.role,
+        location: employee.location ?? null,
+        isSuperAdmin: employee.is_super_admin ?? false,
+      })
+    } catch (err) {
+      if (latestRequestIdRef.current === requestId) {
+        console.error('Employee lookup failed:', err)
+        clearAuth()
+      }
+    } finally {
+      if (latestRequestIdRef.current === requestId) {
+        setLoading(false)
+      }
     }
-
-    if (latestUserIdRef.current !== userId) {
-      return
-    }
-
-    const employee = emp as unknown as Employee & {
-      role: Role
-      location: Location | null
-      is_super_admin?: boolean
-    }
-
-    setAuthUser({
-      employee,
-      role: employee.role,
-      location: employee.location ?? null,
-      isSuperAdmin: employee.is_super_admin ?? false,
-    })
-    setLoading(false)
   }, [clearAuth, supabase])
 
   useEffect(() => {
@@ -111,11 +125,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     bootstrap()
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event: AuthChangeEvent, session: Session | null) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, session: Session | null) => {
       if (!mounted) return
 
+      if (event === 'INITIAL_SESSION') {
+        return
+      }
+
       if (session?.user?.id) {
-        await loadEmployee(session.user.id)
+        try {
+          await loadEmployee(session.user.id)
+        } catch (err) {
+          console.error('Auth state load failed:', err)
+          clearAuth()
+        }
       } else {
         clearAuth()
       }
