@@ -123,3 +123,42 @@ export interface StockWithDelivery extends MatchedStock {
   delivery_status: DeliveryDateStatus
   qc_status: string | null
 }
+
+// ── New mobile-app types ──────────────────────────────────────────────────────
+
+export type TransferStatus = 'assigned' | 'picked_up' | 'arrived'
+
+export interface TransferTask {
+  id: string
+  chassis_no: string
+  driver_id: number
+  from_location: string
+  to_location: string
+  status: TransferStatus
+  assigned_at: string
+  picked_up_at: string | null
+  arrived_at: string | null
+  notes: string | null
+}
+
+export type CarStatus =
+  | 'transfer_needed'
+  | 'transfer_assigned'
+  | 'in_transit'
+  | 'at_branch'
+  | 'qc_pending'
+  | 'qc_approved'
+  | 'qc_rejected'
+  | 'ready'
+
+export interface StockWithMeta extends MatchedStock {
+  delivery_date: string | null
+  delivery_time: string | null
+  booking_id: string | null
+  delivery_status: DeliveryDateStatus
+  qc_status: string | null
+  qc_record: QCRecord | null
+  transfer: TransferTask | null
+  car_status: CarStatus
+  booking_branch: string | null
+}
