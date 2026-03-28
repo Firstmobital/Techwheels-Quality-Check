@@ -1,22 +1,21 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
-import { useAuth } from '../context/auth-context'
+import { useAuth } from '@/context/auth-context'
 import { ProtectedRoute } from './ProtectedRoute'
-import LoginPage from '../pages/login/LoginPage'
-import AppLayout from '../components/layout/AppLayout'
-import DashboardPage from '../pages/dashboard/DashboardPage'
-import StockPage from '../pages/stock/StockPage'
-import StockDetailPage from '../pages/stock/StockDetailPage'
-import QCPage from '../pages/qc/QCPage'
-import DeliveryPage from '../pages/delivery/DeliveryPage'
-import SettingsPage from '../pages/settings/SettingsPage'
+import LoginPage from '@/pages/login/LoginPage'
+import AppShell from '@/components/layout/AppShell'
+import HomePage from '@/pages/home/HomePage'
+import TasksPage from '@/pages/tasks/TasksPage'
+import QCPage from '@/pages/qc/QCPage'
+import StockPage from '@/pages/stock/StockPage'
+import SettingsPage from '@/pages/settings/SettingsPage'
 
 function PublicOnlyRoute() {
   const { authUser, loading } = useAuth()
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <p className="text-sm text-slate-500">Loading...</p>
+      <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <p style={{ fontSize: 14, color: 'var(--muted)' }}>Loading...</p>
       </div>
     )
   }
@@ -26,32 +25,21 @@ function PublicOnlyRoute() {
 }
 
 function RootRedirect() {
-  const { authUser, loading, isManager, isTechnician, isDriver, isSuperAdmin } = useAuth()
+  const { authUser, loading, isManager, isSuperAdmin, isDriver } = useAuth()
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <p className="text-sm text-slate-500">Loading...</p>
+      <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <p style={{ fontSize: 14, color: 'var(--muted)' }}>Loading...</p>
       </div>
     )
   }
 
   if (!authUser) return <Navigate to="/login" replace />
-  if (isSuperAdmin || isManager) return <Navigate to="/dashboard" replace />
-  if (isTechnician) return <Navigate to="/stock" replace />
-  if (isDriver) return <Navigate to="/delivery" replace />
-  return <Navigate to="/dashboard" replace />
-}
-
-function PlaceholderPage({ title }: { title: string }) {
-  return (
-    <div className="min-h-screen bg-slate-50 p-8">
-      <div className="max-w-3xl mx-auto bg-white border border-slate-200 rounded-xl p-6">
-        <h1 className="text-xl font-bold text-slate-800">{title}</h1>
-        <p className="mt-2 text-sm text-slate-500">Page scaffold ready. Business UI will be migrated in next phase.</p>
-      </div>
-    </div>
-  )
+  if (isDriver) return <Navigate to="/tasks" replace />
+  if (isSuperAdmin || isManager) return <Navigate to="/home" replace />
+  // Technician
+  return <Navigate to="/qc" replace />
 }
 
 export function AppRouter() {
@@ -62,12 +50,11 @@ export function AppRouter() {
       <Route element={<ProtectedRoute />}>
         <Route path="/" element={<RootRedirect />} />
 
-        <Route element={<AppLayout />}>
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/stock" element={<StockPage />} />
-          <Route path="/stock/:chassis" element={<StockDetailPage />} />
-          <Route path="/delivery" element={<DeliveryPage />} />
-          <Route path="/qc" element={<QCPage />} />
+        <Route element={<AppShell />}>
+          <Route path="/home"     element={<HomePage />} />
+          <Route path="/tasks"    element={<TasksPage />} />
+          <Route path="/qc"       element={<QCPage />} />
+          <Route path="/stock"    element={<StockPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
       </Route>
