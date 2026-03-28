@@ -61,8 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(true)
 
     try {
-      // Wrap query in a timeout promise to prevent hanging
-      const queryPromise = supabase
+      const { data: emp, error } = await supabase
         .from('employees')
         .select(`
           id, auth_user_id, first_name, last_name, email,
@@ -73,12 +72,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         `)
         .eq('auth_user_id', userId)
         .single()
-
-      const timeoutPromise = new Promise<{ data: null; error: { message: string } }>((resolve) =>
-        setTimeout(() => resolve({ data: null, error: { message: 'Query timeout' } }), 15000)
-      )
-
-      const { data: emp, error } = await Promise.race([queryPromise, timeoutPromise])
 
       if (latestRequestIdRef.current !== requestId || latestUserIdRef.current !== userId) {
         return
@@ -116,17 +109,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true
-    let timeoutHandle: ReturnType<typeof setTimeout> | null = null
-
-    // Safety timeout: if loading is still true after 25 seconds, force clear it
-    const safetyTimeout = () => {
-      timeoutHandle = setTimeout(() => {
-        if (mounted && loading) {
-          console.warn('Auth loading timeout exceeded, forcing completion')
-          clearAuth()
-        }
-      }, 25000)
-    }
 
     const bootstrap = async () => {
       const { data, error } = await supabase.auth.getSession()
@@ -141,7 +123,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await loadEmployee(data.session.user.id)
     }
 
-    safetyTimeout()
     bootstrap()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, session: Session | null) => {
@@ -165,7 +146,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       mounted = false
-      if (timeoutHandle) clearTimeout(timeoutHandle)
       subscription.unsubscribe()
     }
   }, [clearAuth, loadEmployee, supabase])
