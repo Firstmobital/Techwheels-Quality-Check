@@ -12,6 +12,7 @@ import {
   customerName,
   fmtDate,
   getDeliveryStatus,
+  getSalesTeamLocation,
 } from '@/lib/utils'
 import type {
   MatchedStock,
@@ -549,9 +550,7 @@ export default function QCPage() {
           : null
         const qcRecord     = qcMap.get(s.chassis_no) ?? null
         const transfer     = transferMap.get(s.chassis_no) ?? null
-        const deliveryBranch = s.sales_team
-          ? (salesTeamMap.get(s.sales_team) ?? null)
-          : null
+        const deliveryBranch = getSalesTeamLocation(salesTeamMap, s.sales_team)
         const deliveryDate = booking?.delivery_date ?? null
         const deliveryTime = booking?.delivery_time ?? null
         const qcStatus     =

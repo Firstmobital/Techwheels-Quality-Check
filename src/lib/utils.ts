@@ -128,14 +128,26 @@ export function truncate(
   return str.length > n ? str.slice(0, n) + '…' : str
 }
 
+// ── Normalize helper for name matching ───────────────────────────────────────
+function normalizeName(name: string): string {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ') // collapse multiple spaces into one
+}
+
 // ── Sales team → delivery branch map ─────────────────────────────────────────
 /**
- * Returns Map<"First Last", locationName>
+ * Returns Map<normalizedFullName, locationName>
  *
  * Chain: matched_stock.sales_team = "First Last"
- *   → employees row with matching first_name + last_name
+ *   → employees row with matching first_name + last_name (case-insensitive)
  *   → employees.location_id
  *   → locations.name  =  delivery branch
+ *
+ * Keys are stored normalized (lowercase, trimmed, single-spaced) so that
+ * lookups via getSalesTeamLocation() are also normalized, avoiding mismatches
+ * caused by different casing or extra whitespace between the two tables.
  */
 export async function buildSalesTeamMap(): Promise<Map<string, string>> {
   const supabase = getSupabaseBrowserClient()
@@ -162,11 +174,31 @@ export async function buildSalesTeamMap(): Promise<Map<string, string>> {
       .trim()
 
     if (fullName && emp.location?.name) {
-      map.set(fullName, emp.location.name)
+      // Store with normalized key so lookups always match regardless of
+      // casing / spacing differences between sales_team and employee names
+      const normalizedKey = normalizeName(fullName)
+      map.set(normalizedKey, emp.location.name)
+
+      // Also log during development so mismatches are easy to spot
+      console.debug(
+        `[buildSalesTeamMap] "${fullName}" → "${emp.location.name}" (key: "${normalizedKey}")`,
+      )
     }
   }
 
   return map
+}
+
+/**
+ * Look up delivery branch from a sales_team string.
+ * Normalizes the input the same way buildSalesTeamMap does.
+ */
+export function getSalesTeamLocation(
+  map: Map<string, string>,
+  salesTeam: string | null | undefined,
+): string | null {
+  if (!salesTeam) return null
+  return map.get(normalizeName(salesTeam)) ?? null
 }
 
 // ── Car status derivation ─────────────────────────────────────────────────────

@@ -59,8 +59,8 @@
 }
 
 @keyframes slide-up-sheet {
-  from { transform: translateY(100%); }
-  to   { transform: translateY(0); }
+  from { transform: translate(-50%, 100%); }
+  to   { transform: translate(-50%, 0); }
 }
 
 @keyframes spin {
@@ -360,6 +360,12 @@
     gap: 8px;
   }
 
+  @media (max-width: 375px) {
+    .photo-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
   .photo-slot {
     aspect-ratio: 4/3;
     border-radius: 8px;
@@ -500,16 +506,19 @@
     position: fixed;
     bottom: 0;
     left: 50%;
-    transform: translateX(-50%);
+    transform: translate(-50%, 0);
     width: 100%;
-    max-width: 430px;
+    max-width: min(430px, 100vw);
     background: var(--surface);
     border-radius: 16px 16px 0 0;
     z-index: 200;
-    max-height: 92vh;
+    max-height: min(92vh, calc(100vh - 64px - env(safe-area-inset-bottom, 0px)));
     overflow-y: auto;
     animation: slide-up-sheet 0.25s cubic-bezier(0.32, 0.72, 0, 1) both;
     -webkit-overflow-scrolling: touch;
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
   .sheet-handle {

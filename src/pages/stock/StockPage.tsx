@@ -11,6 +11,7 @@ import {
   customerName,
   fmtDate,
   getDeliveryStatus,
+  getSalesTeamLocation,
 } from '@/lib/utils'
 import type { MatchedStock, QCRecord, TransferTask, StockWithMeta, Role } from '@/types'
 
@@ -282,7 +283,7 @@ export default function StockPage() {
         const booking = s.opportunity_name ? bookingMap.get(s.opportunity_name) : null
         const qcRecord = qcMap.get(s.chassis_no) ?? null
         const transfer = transferMap.get(s.chassis_no) ?? null
-        const bookingBranch = s.sales_team ? (salesTeamMap.get(s.sales_team) ?? null) : null
+        const bookingBranch = getSalesTeamLocation(salesTeamMap, s.sales_team)
         const deliveryDate = booking?.delivery_date ?? null
         const deliveryTime = booking?.delivery_time ?? null
         const qcStatus = qcRecord?.final_status ?? booking?.qc_check_status ?? null
