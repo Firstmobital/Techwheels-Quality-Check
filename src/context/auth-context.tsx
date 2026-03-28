@@ -233,8 +233,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error(error?.message ?? 'Login failed')
     }
 
-    await loadEmployee(data.user.id)
-  }, [loadEmployee, supabase])
+    // Profile loading is handled by onAuthStateChange(SIGNED_IN) to avoid duplicate requests.
+  }, [supabase])
 
   const signOut = useCallback(async () => {
     const { error } = await supabase.auth.signOut()
