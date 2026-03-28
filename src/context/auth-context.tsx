@@ -183,7 +183,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }, 30000)
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, session: Session | null) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
       if (!mounted) return
 
       console.debug('[Auth] onAuthStateChange:', {
@@ -201,12 +201,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (session?.user?.id) {
         console.debug('[Auth] Auth state has user, calling loadEmployee')
-        try {
-          await loadEmployee(session.user.id)
-        } catch (err) {
-          console.error('[Auth] State change load failed:', err)
-          clearAuth()
-        }
+        // Defer DB call outside auth callback to avoid Supabase lock/deadlock issues.
+        setTimeout(() => {
+          if (!mounted) return
+          void loadEmployee(session.user.id).catch((err) => {
+            console.error('[Auth] State change load failed:', err)
+            clearAuth()
+          })
+        }, 0)
       } else {
         console.debug('[Auth] Auth state has no user, clearing auth')
         clearAuth()
