@@ -482,12 +482,12 @@ export default function TransfersPage() {
       if (transferError) throw transferError
 
       const { error: movementError } = await supabase.from('chassis_movements').insert({
-        event_type: 'transfer_assigned',
+        event_type: 'intake_stock_transfer',
         chassis_no: chassis,
         from_location: fromLocation,
         to_location: newToLocation,
         performed_by: authUser.employee.id,
-        notes: newNotes.trim() || null,
+        notes: `डीलर: ${fromLocation}`,
         event_at: now,
       })
       if (movementError) throw movementError

@@ -393,7 +393,7 @@ export default function ConcernsPage() {
                           style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
                         >
                           <AlertCircle size={14} />
-                          देखी
+                          देखी ✓
                         </button>
                       )}
 

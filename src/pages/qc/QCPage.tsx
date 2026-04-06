@@ -227,13 +227,23 @@ function QCSheet({
       if (finalStatus === 'rejected') {
         const faultDescription = remarks.trim() || 'QC में खराबी पाई गई'
 
+        const { data: technician } = await supabase
+          .from('employees')
+          .select('id, role:roles!inner(code)')
+          .eq('roles.code', 'TECHNICIAN')
+          .order('id', { ascending: true })
+          .limit(1)
+          .maybeSingle()
+
+        const assignedTechnicianId = (technician as { id: number } | null)?.id ?? null
+
         const { error: faultErr } = await supabase
           .from('fault_tickets')
           .insert({
             chassis_no: item.chassis_no,
             stage: 'delivery_qc',
             raised_by: performedBy,
-            assigned_to: null,
+            assigned_to: assignedTechnicianId,
             severity: 'major',
             description: faultDescription,
             photo_urls: [],

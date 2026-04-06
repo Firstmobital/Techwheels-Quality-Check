@@ -76,7 +76,7 @@ export default function TasksPage() {
 
       setTasks(enriched)
     } catch (err) {
-      toastError('Could not load tasks')
+      toastError('टास्क लोड नहीं हुए')
       console.error(err)
     } finally {
       setLoading(false)
@@ -88,18 +88,32 @@ export default function TasksPage() {
   async function markPickedUp(task: TaskWithStock) {
     setUpdating(task.id)
     try {
+      const pickedUpAt = new Date().toISOString()
       const { error } = await supabase
         .from('transfer_tasks')
         .update({
           status: 'picked_up',
-          picked_up_at: new Date().toISOString(),
+          picked_up_at: pickedUpAt,
         })
         .eq('id', task.id)
       if (error) throw error
-      success('Marked as picked up!')
+
+      const { error: movementError } = await supabase
+        .from('chassis_movements')
+        .insert({
+          chassis_no: task.chassis_no,
+          event_type: 'transfer_picked_up',
+          from_location: task.from_dealer || task.from_location,
+          to_location: task.to_location,
+          performed_by: driverId,
+          event_at: pickedUpAt,
+        })
+      if (movementError) throw movementError
+
+      success('पिकअप मार्क हो गया!')
       void load()
     } catch {
-      toastError('Update failed — please try again')
+      toastError('अपडेट नहीं हुआ — दोबारा कोशिश करें')
     } finally {
       setUpdating(null)
     }
@@ -130,7 +144,7 @@ export default function TasksPage() {
         })
       if (movementError) throw movementError
 
-      success('Marked as arrived!')
+      success('गाड़ी पहुँच गई!')
       void load()
     } catch {
       toastError('Update failed — please try again')

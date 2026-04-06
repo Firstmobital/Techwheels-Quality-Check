@@ -101,7 +101,7 @@ export default function PDIPage() {
     else setLoading(true)
 
     try {
-      const [yardRes, pdiRes, faultRes] = await Promise.all([
+      const [yardRes, pdiRes, faultRes, deliveryFaultRes] = await Promise.all([
         supabase
           .from('yard_slots')
           .select('*')
@@ -119,15 +119,26 @@ export default function PDIPage() {
           .eq('assigned_to', techId)
           .in('status', ['open', 'in_progress'])
           .order('created_at', { ascending: false }),
+        supabase
+          .from('fault_tickets')
+          .select('id, chassis_no, stage, raised_by, assigned_to, severity, description, status, resolution_notes, resolved_at, created_at')
+          .eq('assigned_to', techId)
+          .eq('stage', 'delivery_qc')
+          .in('status', ['open', 'in_progress'])
+          .order('created_at', { ascending: false }),
       ])
 
       if (yardRes.error) throw yardRes.error
       if (pdiRes.error) throw pdiRes.error
       if (faultRes.error) throw faultRes.error
+      if (deliveryFaultRes.error) throw deliveryFaultRes.error
 
       setYardSlots((yardRes.data ?? []) as YardSlot[])
       setPdiRecords((pdiRes.data ?? []) as PDIRecord[])
-      setFaults((faultRes.data ?? []) as FaultTicketRow[])
+      setFaults([
+        ...((faultRes.data ?? []) as FaultTicketRow[]),
+        ...((deliveryFaultRes.data ?? []) as FaultTicketRow[]),
+      ])
     } catch (err) {
       console.error('[PDIPage] loadData failed:', err)
       toastError('PDI डेटा लोड नहीं हुआ')
