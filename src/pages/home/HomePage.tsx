@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { RefreshCw, AlertTriangle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/context/auth-context'
@@ -147,6 +148,7 @@ async function loadAllStock(
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function HomePage() {
+  const navigate = useNavigate()
   const { authUser, isManager, isSuperAdmin } = useAuth()
   const { selectedBranch } = useBranch()
   const [items, setItems] = useState<StockWithMeta[]>([])
@@ -274,13 +276,14 @@ export default function HomePage() {
       {/* Header */}
       <div className="page-header">
         <div>
-          <h1>Dashboard</h1>
+          <h1>होम डैशबोर्ड</h1>
           {authUser?.location?.name && (
             <p className="subtitle">{authUser.location.name}</p>
           )}
         </div>
         <button
           className="nav-btn"
+          title="रिफ्रेश"
           style={{ minWidth: 36, minHeight: 36 }}
           onClick={() => { void load(); void loadDriverStats() }}
           disabled={loading}
@@ -294,7 +297,7 @@ export default function HomePage() {
         <div className="alert-strip">
           <AlertTriangle size={15} />
           <span>
-            {rejected} car{rejected > 1 ? 's' : ''} failed QC — re-inspection needed
+            {rejected} गाड़ी{rejected > 1 ? 'यां' : ''} QC फेल हुई — दोबारा जांच जरूरी
           </span>
         </div>
       )}
@@ -302,13 +305,13 @@ export default function HomePage() {
       {/* Row 1: Total Cars + Transfer Pending */}
       <div className="stat-grid">
         <div className="stat-card">
-          <div className="stat-label">Total Cars</div>
+          <div className="stat-label">कुल गाड़ियां</div>
           <div className="stat-value" style={{ color: 'var(--accent)' }}>
             {loading ? '—' : total}
           </div>
         </div>
         <div className="stat-card">
-          <div className="stat-label">Transfer Pending</div>
+          <div className="stat-label">ट्रांसफर बाकी</div>
           <div className="stat-value" style={{ color: 'var(--amber)' }}>
             {loading ? '—' : transferCount}
           </div>
@@ -318,19 +321,19 @@ export default function HomePage() {
       {/* Row 2: QC Pending + QC Approved + QC Rejected */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, padding: '0 16px 4px' }}>
         <div className="stat-card" style={{ padding: '12px 10px' }}>
-          <div className="stat-label" style={{ fontSize: 10 }}>QC Pending</div>
+          <div className="stat-label" style={{ fontSize: 10 }}>QC बाकी</div>
           <div className="stat-value" style={{ color: 'var(--purple)', fontSize: 22 }}>
             {loading ? '—' : qcPending}
           </div>
         </div>
         <div className="stat-card" style={{ padding: '12px 10px' }}>
-          <div className="stat-label" style={{ fontSize: 10 }}>QC Approved</div>
+          <div className="stat-label" style={{ fontSize: 10 }}>QC पास</div>
           <div className="stat-value" style={{ color: 'var(--green)', fontSize: 22 }}>
             {loading ? '—' : qcApproved}
           </div>
         </div>
         <div className="stat-card" style={{ padding: '12px 10px' }}>
-          <div className="stat-label" style={{ fontSize: 10 }}>QC Rejected</div>
+          <div className="stat-label" style={{ fontSize: 10 }}>QC रद्द</div>
           <div className="stat-value" style={{ color: 'var(--red)', fontSize: 22 }}>
             {loading ? '—' : rejected}
           </div>
@@ -340,7 +343,7 @@ export default function HomePage() {
       {/* QC Rejected section */}
       {!loading && rejectedItems.length > 0 && (
         <>
-          <div className="section-label">Needs Attention — QC Rejected</div>
+          <div className="section-label">ध्यान दें — QC रद्द</div>
           <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
             {rejectedItems.map(item => (
               <div
@@ -351,7 +354,11 @@ export default function HomePage() {
                 <div style={{ padding: '12px 14px' }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
                     <div>
-                      <span className="mono" style={{ color: 'var(--accent)', display: 'block', marginBottom: 2 }}>
+                      <span
+                        className="mono"
+                        style={{ color: 'var(--accent)', display: 'block', marginBottom: 2, cursor: 'pointer', textDecoration: 'underline' }}
+                        onClick={() => navigate(`/history?chassis=${encodeURIComponent(item.chassis_no)}`)}
+                      >
                         {item.chassis_no}
                       </span>
                       <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
@@ -361,7 +368,7 @@ export default function HomePage() {
                         {item.sales_team ?? customerName(item)}
                       </div>
                     </div>
-                    <span className="badge badge-red">QC Rejected</span>
+                    <span className="badge badge-red">QC रद्द</span>
                   </div>
                   {item.qc_record?.remarks && (
                     <div style={{ marginTop: 8, padding: '6px 10px', background: '#FEE2E2', borderRadius: 8, fontSize: 12, color: 'var(--red)' }}>
@@ -382,7 +389,7 @@ export default function HomePage() {
 
       {/* Driver Task Report */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 16px 8px' }}>
-        <div className="section-label" style={{ padding: 0 }}>Driver task report</div>
+        <div className="section-label" style={{ padding: 0 }}>ड्राइवर रिपोर्ट</div>
         <div style={{ display: 'flex', gap: 5 }}>
           {(['today', 'week', 'month', 'custom'] as DateRange[]).map(r => (
             <button
@@ -400,7 +407,7 @@ export default function HomePage() {
                 textTransform: 'capitalize',
               }}
             >
-              {r === 'week' ? 'Week' : r === 'month' ? 'Month' : r === 'custom' ? 'Custom' : 'Today'}
+              {r === 'week' ? 'इस हफ्ते' : r === 'month' ? 'इस महीने' : r === 'custom' ? 'कस्टम' : 'आज'}
             </button>
           ))}
         </div>
@@ -409,6 +416,7 @@ export default function HomePage() {
       {/* Custom date range picker */}
       {showCustom && (
         <div style={{ display: 'flex', gap: 8, padding: '0 16px 10px', alignItems: 'center' }}>
+          <span style={{ fontSize: 12, color: 'var(--muted)' }}>से</span>
           <input
             type="date"
             className="form-input"
@@ -416,7 +424,7 @@ export default function HomePage() {
             onChange={e => setCustomFrom(e.target.value)}
             style={{ flex: 1, fontSize: 13 }}
           />
-          <span style={{ fontSize: 12, color: 'var(--muted)' }}>to</span>
+          <span style={{ fontSize: 12, color: 'var(--muted)' }}>तक</span>
           <input
             type="date"
             className="form-input"
@@ -438,7 +446,7 @@ export default function HomePage() {
               flexShrink: 0,
             }}
           >
-            Apply
+            लागू करें
           </button>
         </div>
       )}
@@ -454,18 +462,18 @@ export default function HomePage() {
             background: 'var(--bg)',
             borderBottom: '1px solid var(--border)',
           }}>
-            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Driver</div>
-            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'center' }}>Total</div>
-            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'center' }}>In</div>
-            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--amber)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'center' }}>Out</div>
-            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--green)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'center' }}>Done</div>
+            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>ड्राइवर</div>
+            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'center' }}>कुल</div>
+            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'center' }}>शहर में</div>
+            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--amber)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'center' }}>शहर बाहर</div>
+            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--green)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'center' }}>पूरे</div>
           </div>
 
           {driverLoading ? (
-            <div style={{ padding: '20px', textAlign: 'center', fontSize: 13, color: 'var(--muted)' }}>Loading...</div>
+            <div style={{ padding: '20px', textAlign: 'center', fontSize: 13, color: 'var(--muted)' }}>लोड हो रहा है...</div>
           ) : driverStats.length === 0 ? (
             <div style={{ padding: '20px', textAlign: 'center', fontSize: 13, color: 'var(--muted)' }}>
-              No driver tasks in this period
+              इस अवधि में कोई ड्राइवर टास्क नहीं मिला
             </div>
           ) : (
             driverStats.map((stat, idx) => {

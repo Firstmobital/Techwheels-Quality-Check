@@ -8,6 +8,11 @@ import TasksPage from '@/pages/tasks/TasksPage'
 import QCPage from '@/pages/qc/QCPage'
 import TransfersPage from '@/pages/transfers/TransfersPage'
 import SettingsPage from '@/pages/settings/SettingsPage'
+import YardPage from '@/pages/yard/YardPage'
+import PDIPage from '@/pages/pdi/PDIPage'
+import ConcernsPage from '@/pages/concerns/ConcernsPage'
+import ChassisHistoryPage from '@/pages/history/ChassisHistoryPage'
+import SalesStockPage from '@/pages/stock/SalesStockPage'
 
 function PublicOnlyRoute() {
   const { authUser, loading } = useAuth()
@@ -33,7 +38,15 @@ function PublicOnlyRoute() {
 }
 
 function RootRedirect() {
-  const { authUser, loading, isDriver, isSuperAdmin, isManager } = useAuth()
+  const {
+    authUser,
+    loading,
+    isDriver,
+    isSuperAdmin,
+    isManager,
+    isYardManager,
+    isSales,
+  } = useAuth()
 
   if (loading) {
     return (
@@ -52,10 +65,12 @@ function RootRedirect() {
   }
 
   if (!authUser) return <Navigate to="/login" replace />
+  if (isYardManager) return <Navigate to="/yard" replace />
+  if (isSales) return <Navigate to="/stock" replace />
   if (isDriver) return <Navigate to="/tasks" replace />
   if (isSuperAdmin || isManager) return <Navigate to="/home" replace />
   // technician
-  return <Navigate to="/qc" replace />
+  return <Navigate to="/pdi" replace />
 }
 
 export function AppRouter() {
@@ -71,7 +86,13 @@ export function AppRouter() {
           <Route path="/transfers" element={<TransfersPage />} />
           <Route path="/qc"        element={<QCPage />} />
           <Route path="/tasks"     element={<TasksPage />} />
+          <Route path="/stock"     element={<SalesStockPage />} />
           <Route path="/settings"  element={<SettingsPage />} />
+          <Route path="/yard"     element={<YardPage />} />
+          <Route path="/pdi"      element={<PDIPage />} />
+          <Route path="/concerns" element={<ConcernsPage />} />
+          <Route path="/history/:chassisNo" element={<ChassisHistoryPage />} />
+          <Route path="/history"  element={<ChassisHistoryPage />} />
         </Route>
       </Route>
 

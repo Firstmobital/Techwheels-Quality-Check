@@ -26,14 +26,16 @@ function roleBadgeClass(code: string): string {
 }
 
 function roleShortName(code: string): string {
-  if (code === 'PDIQCMGR') return 'Manager'
-  if (code === 'TECHNICIAN') return 'Tech'
-  if (code === 'DRIVER') return 'Driver'
+  if (code === 'PDIQCMGR') return 'QC मैनेजर'
+  if (code === 'TECHNICIAN') return 'टेक्नीशियन'
+  if (code === 'DRIVER') return 'ड्राइवर'
+  if (code === 'YARDMGR') return 'यार्ड मैनेजर'
+  if (code === 'SALES') return 'सेल्स'
   return code
 }
 
 export default function SettingsPage() {
-  const { authUser, isSuperAdmin, signOut } = useAuth()
+  const { authUser, isManager, isSuperAdmin, signOut } = useAuth()
   const { success, error: toastError } = useToast()
   const supabase = createClient()
 
@@ -94,11 +96,19 @@ export default function SettingsPage() {
     !e.employee_status || e.employee_status === 'active' || e.employee_status === 'confirmed'
   )
 
+  if (!isManager && !isSuperAdmin) {
+    return (
+      <div className="fade-in" style={{ padding: 16, color: 'var(--text)' }}>
+        आप यह पेज नहीं देख सकते
+      </div>
+    )
+  }
+
   return (
     <div className="fade-in">
       {/* Header */}
       <div className="page-header">
-        <h1>Settings</h1>
+        <h1>सेटिंग</h1>
         <button
           onClick={() => { void load() }}
           className="nav-btn"
@@ -134,14 +144,14 @@ export default function SettingsPage() {
               )}
             </div>
             {isSuperAdmin && (
-              <span className="badge badge-purple">Super Admin</span>
+              <span className="badge badge-purple">सुपर एडमिन</span>
             )}
           </div>
         )}
 
         {/* Tab pills */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-          {([['yards', 'Yard Locations'], ['team', 'Team Members']] as [SettingsTab, string][]).map(([key, label]) => (
+          {([['yards', 'यार्ड'], ['team', 'टीम']] as [SettingsTab, string][]).map(([key, label]) => (
             <button
               key={key}
               className={`filter-pill${tab === key ? ' active' : ''}`}
@@ -153,7 +163,7 @@ export default function SettingsPage() {
         </div>
 
         {loading ? (
-          <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>Loading...</div>
+          <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>लोड हो रहा है...</div>
         ) : tab === 'yards' ? (
           /* Yards tab */
           <div>
@@ -184,7 +194,7 @@ export default function SettingsPage() {
                 value={newYard}
                 onChange={e => setNewYard(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && addYard()}
-                placeholder="New yard name (e.g. Yard 4)"
+                placeholder="यार्ड का नाम"
                 style={{ flex: 1 }}
               />
               <button
@@ -196,7 +206,7 @@ export default function SettingsPage() {
                 }}
               >
                 <Plus size={14} />
-                Add
+                यार्ड जोड़ें
               </button>
             </div>
 
@@ -206,12 +216,29 @@ export default function SettingsPage() {
               disabled={savingYards}
             >
               {savingYards ? <RefreshCw size={15} className="spin" /> : null}
-              {savingYards ? 'Saving...' : 'Save Yards'}
+              {savingYards ? 'सेव हो रहा है...' : 'सेव करें'}
             </button>
           </div>
         ) : (
           /* Team tab */
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr auto auto',
+                gap: 10,
+                padding: '0 10px',
+                fontSize: 11,
+                color: 'var(--muted)',
+                fontWeight: 600,
+                textTransform: 'uppercase',
+                letterSpacing: '0.04em',
+              }}
+            >
+              <span>नाम</span>
+              <span>ब्रांच</span>
+              <span>भूमिका</span>
+            </div>
             {activeEmployees.map(e => (
               <div key={e.id} className="card" style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{
@@ -227,9 +254,7 @@ export default function SettingsPage() {
                   <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)' }}>
                     {[e.first_name, e.last_name].filter(Boolean).join(' ')}
                   </div>
-                  {e.location && (
-                    <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 1 }}>{e.location.name}</div>
-                  )}
+                  <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 1 }}>{e.location?.name ?? '—'}</div>
                 </div>
                 {e.role && (
                   <span className={`badge ${roleBadgeClass(e.role.code)}`}>
@@ -253,7 +278,7 @@ export default function SettingsPage() {
             }}
           >
             {signingOut ? <RefreshCw size={16} className="spin" /> : <LogOut size={16} />}
-            Sign Out
+            साइन आउट
           </button>
         </div>
 

@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { RefreshCw, Search, X, UserCheck } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/context/auth-context'
@@ -39,6 +40,7 @@ function AssignDriverSheet({
   onClose: () => void
   onSaved: () => void
 }) {
+  const navigate = useNavigate()
   const { success, error: toastError } = useToast()
   const supabase = createClient()
   const [drivers, setDrivers] = useState<DriverEmployee[]>([])
@@ -111,7 +113,13 @@ function AssignDriverSheet({
         <div style={{ padding: '14px 16px 0' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
             <div>
-              <span className="mono" style={{ color: 'var(--accent)', fontSize: 14 }}>{item.chassis_no}</span>
+              <span
+                className="mono"
+                style={{ color: 'var(--accent)', fontSize: 14, cursor: 'pointer', textDecoration: 'underline' }}
+                onClick={() => navigate(`/history?chassis=${encodeURIComponent(item.chassis_no)}`)}
+              >
+                {item.chassis_no}
+              </span>
               <div style={{ fontSize: 16, fontWeight: 700, marginTop: 2 }}>
                 {item.product_description ?? item.product_line ?? '—'}
               </div>
@@ -199,9 +207,11 @@ function DeliveryCard({
   driverMap: Map<number, string>
   onAssign: (item: StockWithMeta) => void
 }) {
+  const navigate = useNavigate()
   const needsDriver = item.car_status === 'transfer_needed'
   const isAssigned  = item.car_status === 'transfer_assigned'
   const isMoving    = item.car_status === 'in_transit'
+  const transferType = item.transfer?.task_type
 
   const assignedDriverName = item.transfer?.driver_id
     ? (driverMap.get(item.transfer.driver_id) ?? null)
@@ -221,7 +231,11 @@ function DeliveryCard({
       <div style={{ padding: '12px 14px' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <span className="mono" style={{ color: 'var(--accent)', display: 'block', marginBottom: 2 }}>
+            <span
+              className="mono"
+              style={{ color: 'var(--accent)', display: 'block', marginBottom: 2, cursor: 'pointer', textDecoration: 'underline' }}
+              onClick={() => navigate(`/history?chassis=${encodeURIComponent(item.chassis_no)}`)}
+            >
               {item.chassis_no}
             </span>
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -240,6 +254,8 @@ function DeliveryCard({
             )}
           </div>
           <div style={{ flexShrink: 0 }}>
+            {transferType === 'stock_transfer' && <span className="badge badge-amber">स्टॉक ट्रांसफर</span>}
+            {transferType === 'yard_transfer' && <span className="badge badge-blue">यार्ड ट्रांसफर</span>}
             {needsDriver && <span className="badge badge-amber">No driver</span>}
             {isAssigned  && <span className="badge badge-amber">Assigned</span>}
             {isMoving    && <span className="badge badge-blue">In transit</span>}
@@ -316,9 +332,19 @@ export default function TransfersPage() {
   const [mainTab, setMainTab] = useState<MainTab>('delivery')
   const [stockSubTab, setStockSubTab] = useState<StockSubTab>('incity')
   const [driverMap, setDriverMap] = useState<Map<number, string>>(new Map())
+  const [drivers, setDrivers] = useState<Array<{ id: number; name: string }>>([])
+  const [showStockTransferForm, setShowStockTransferForm] = useState(false)
+  const [newChassisNo, setNewChassisNo] = useState('')
+  const [newFromLocation, setNewFromLocation] = useState('')
+  const [newToLocation, setNewToLocation] = useState('अजमेर रोड')
+  const [newDriverId, setNewDriverId] = useState('')
+  const [newNotes, setNewNotes] = useState('')
+  const [submittingStockTransfer, setSubmittingStockTransfer] = useState(false)
   const supabase = createClient()
+  const { success, error: toastError } = useToast()
 
   const locationName = authUser?.location?.name ?? ''
+  const yardList = ['अजमेर रोड', 'जगतपुरा', 'हवा सड़क']
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -335,7 +361,9 @@ export default function TransfersPage() {
         supabase.from('matched_stock_customers').select('*'),
         supabase.from('booking').select('id, crm_opty_id, delivery_date, delivery_time, qc_check_status'),
         supabase.from('car_qc_records').select('*'),
-        supabase.from('transfer_tasks').select('*'),
+        supabase
+          .from('transfer_tasks')
+          .select('id, chassis_no, task_type, from_dealer, driver_id, from_location, to_location, status, assigned_at, picked_up_at, arrived_at, notes'),
         supabase.from('employees').select('id, first_name, last_name, role:roles!inner(code)').eq('roles.code', 'DRIVER'),
       ])
 
@@ -345,6 +373,12 @@ export default function TransfersPage() {
         dMap.set(d.id, [d.first_name, d.last_name].filter(Boolean).join(' '))
       }
       setDriverMap(dMap)
+      setDrivers(
+        ((driverData ?? []) as Array<{ id: number; first_name: string; last_name: string | null }>).map(d => ({
+          id: d.id,
+          name: [d.first_name, d.last_name].filter(Boolean).join(' '),
+        })),
+      )
 
       const bookingMap = new Map<string, BookingRow>()
       for (const b of (bookingData ?? []) as BookingRow[]) {
@@ -403,6 +437,75 @@ export default function TransfersPage() {
   }, [isManager, isSuperAdmin, locationName, selectedBranch])
 
   useEffect(() => { void load() }, [load])
+
+  const submitStockTransfer = async () => {
+    const chassis = newChassisNo.trim().toUpperCase()
+    const fromLocation = newFromLocation.trim()
+    const driverId = parseInt(newDriverId)
+
+    if (!chassis) {
+      toastError('चेसिस नंबर जरूरी है')
+      return
+    }
+    if (!fromLocation) {
+      toastError('कहाँ से (डीलर/लोकेशन) जरूरी है')
+      return
+    }
+    if (!newToLocation) {
+      toastError('कहाँ जाएगी चुनें')
+      return
+    }
+    if (!newDriverId || Number.isNaN(driverId)) {
+      toastError('ड्राइवर चुनें')
+      return
+    }
+    if (!authUser?.employee?.id) {
+      toastError('यूजर जानकारी नहीं मिली')
+      return
+    }
+
+    setSubmittingStockTransfer(true)
+    try {
+      const now = new Date().toISOString()
+
+      const { error: transferError } = await supabase.from('transfer_tasks').insert({
+        chassis_no: chassis,
+        driver_id: driverId,
+        from_location: fromLocation,
+        to_location: newToLocation,
+        status: 'assigned',
+        task_type: 'stock_transfer',
+        from_dealer: fromLocation,
+        notes: newNotes.trim() || null,
+        assigned_at: now,
+      })
+      if (transferError) throw transferError
+
+      const { error: movementError } = await supabase.from('chassis_movements').insert({
+        event_type: 'transfer_assigned',
+        chassis_no: chassis,
+        from_location: fromLocation,
+        to_location: newToLocation,
+        performed_by: authUser.employee.id,
+        notes: newNotes.trim() || null,
+        event_at: now,
+      })
+      if (movementError) throw movementError
+
+      success('स्टॉक ट्रांसफर असाइन हो गया')
+      setShowStockTransferForm(false)
+      setNewChassisNo('')
+      setNewFromLocation('')
+      setNewToLocation('अजमेर रोड')
+      setNewDriverId('')
+      setNewNotes('')
+      void load()
+    } catch (err: unknown) {
+      toastError('सेव नहीं हुआ: ' + (err instanceof Error ? err.message : 'Unknown error'))
+    } finally {
+      setSubmittingStockTransfer(false)
+    }
+  }
 
   const filtered = items.filter(i => {
     if (!search) return true
@@ -499,6 +602,99 @@ export default function TransfersPage() {
       {/* Delivery vehicles content */}
       {mainTab === 'delivery' && (
         <>
+          {(isManager || isSuperAdmin) && (
+            <div style={{ padding: '12px 16px 0' }}>
+              <div className="task-card" style={{ margin: 0 }}>
+                <div style={{ padding: 12, borderBottom: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: 13, fontWeight: 700 }}>स्टॉक ट्रांसफर असाइन करें</div>
+                </div>
+
+                <div style={{ padding: 12 }}>
+                  <button
+                    className="filter-pill"
+                    onClick={() => setShowStockTransferForm(v => !v)}
+                    type="button"
+                    disabled={submittingStockTransfer}
+                  >
+                    + नया स्टॉक ट्रांसफर
+                  </button>
+
+                  {showStockTransferForm && (
+                    <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
+                      <div>
+                        <label className="section-label" style={{ padding: 0, marginBottom: 4 }}>Chassis Number</label>
+                        <input
+                          className="form-input"
+                          value={newChassisNo}
+                          onChange={e => setNewChassisNo(e.target.value)}
+                          placeholder="जैसे: MA1ABCD123"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="section-label" style={{ padding: 0, marginBottom: 4 }}>कहाँ से (डीलर/लोकेशन)</label>
+                        <input
+                          className="form-input"
+                          value={newFromLocation}
+                          onChange={e => setNewFromLocation(e.target.value)}
+                          placeholder="डीलर/लोकेशन नाम"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="section-label" style={{ padding: 0, marginBottom: 4 }}>कहाँ जाएगी</label>
+                        <select
+                          className="form-input"
+                          value={newToLocation}
+                          onChange={e => setNewToLocation(e.target.value)}
+                        >
+                          {yardList.map(y => (
+                            <option key={y} value={y}>{y}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="section-label" style={{ padding: 0, marginBottom: 4 }}>ड्राइवर चुनें</label>
+                        <select
+                          className="form-input"
+                          value={newDriverId}
+                          onChange={e => setNewDriverId(e.target.value)}
+                        >
+                          <option value="">ड्राइवर चुनें</option>
+                          {drivers.map(d => (
+                            <option key={d.id} value={d.id}>{d.name}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="section-label" style={{ padding: 0, marginBottom: 4 }}>Notes</label>
+                        <textarea
+                          className="form-input"
+                          rows={3}
+                          value={newNotes}
+                          onChange={e => setNewNotes(e.target.value)}
+                          placeholder="वैकल्पिक नोट्स"
+                        />
+                      </div>
+
+                      <button
+                        className="big-btn big-btn-primary"
+                        onClick={() => { void submitStockTransfer() }}
+                        disabled={submittingStockTransfer}
+                        type="button"
+                      >
+                        {submittingStockTransfer ? <RefreshCw size={15} className="spin" /> : <UserCheck size={15} />}
+                        {submittingStockTransfer ? 'सेव हो रहा है...' : 'असाइन करें'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           <div style={{ padding: '12px 16px 8px' }}>
             <div className="search-bar">
               <Search size={16} style={{ color: 'var(--muted)', flexShrink: 0 }} />

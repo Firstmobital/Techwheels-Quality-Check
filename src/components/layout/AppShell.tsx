@@ -5,6 +5,10 @@ import {
   ClipboardCheck,
   ClipboardList,
   Settings,
+  Warehouse,
+  AlertCircle,
+  History,
+  Wrench,
   ChevronDown,
   type LucideProps,
 } from 'lucide-react'
@@ -26,7 +30,14 @@ interface NavItem {
 }
 
 export default function AppShell() {
-  const { isManager, isDriver, isTechnician, isSuperAdmin } = useAuth()
+  const {
+    isManager,
+    isDriver,
+    isTechnician,
+    isSuperAdmin,
+    isYardManager,
+    isSales,
+  } = useAuth()
   const { selectedBranch, setSelectedBranch } = useBranch()
   const location = useLocation()
   const [branches, setBranches] = useState<string[]>([])
@@ -46,20 +57,34 @@ export default function AppShell() {
   }, [])
 
   const managerTabs: NavItem[] = [
-    { to: '/home',      label: 'Dashboard', icon: LayoutDashboard },
-    { to: '/transfers', label: 'Transfers', icon: ArrowLeftRight },
-    { to: '/qc',        label: 'QC',        icon: ClipboardCheck },
-    { to: '/settings',  label: 'Settings',  icon: Settings },
+    { to: '/home',      label: 'होम',      icon: LayoutDashboard },
+    { to: '/transfers', label: 'ट्रांसफर', icon: ArrowLeftRight },
+    { to: '/qc',        label: 'QC जांच',   icon: ClipboardCheck },
+    { to: '/concerns',  label: 'चिंता',     icon: AlertCircle },
+    { to: '/settings',  label: 'सेटिंग',    icon: Settings },
   ]
 
   const technicianTabs: NavItem[] = [
-    { to: '/qc',       label: 'QC',       icon: ClipboardCheck },
-    { to: '/settings', label: 'Settings', icon: Settings },
+    { to: '/pdi',      label: 'PDI',      icon: Wrench },
+    { to: '/qc',       label: 'QC जांच', icon: ClipboardCheck },
+    { to: '/settings', label: 'सेटिंग',  icon: Settings },
   ]
 
   const driverTabs: NavItem[] = [
-    { to: '/tasks',    label: 'My Tasks', icon: ClipboardList },
-    { to: '/settings', label: 'Settings', icon: Settings },
+    { to: '/tasks',    label: 'मेरे काम', icon: ClipboardList },
+    { to: '/settings', label: 'सेटिंग',   icon: Settings },
+  ]
+
+  const yardManagerTabs: NavItem[] = [
+    { to: '/yard',     label: 'यार्ड',   icon: Warehouse },
+    { to: '/concerns', label: 'चिंता',   icon: AlertCircle },
+    { to: '/settings', label: 'सेटिंग',  icon: Settings },
+  ]
+
+  const salesTabs: NavItem[] = [
+    { to: '/stock',    label: 'गाड़ियाँ', icon: LayoutDashboard },
+    { to: '/concerns', label: 'चिंता',    icon: AlertCircle },
+    { to: '/settings', label: 'सेटिंग',   icon: Settings },
   ]
 
   let tabs: NavItem[]
@@ -67,6 +92,10 @@ export default function AppShell() {
     tabs = driverTabs
   } else if (isTechnician) {
     tabs = technicianTabs
+  } else if (isYardManager) {
+    tabs = yardManagerTabs
+  } else if (isSales) {
+    tabs = salesTabs
   } else {
     tabs = managerTabs
   }
@@ -74,22 +103,24 @@ export default function AppShell() {
   return (
     <div className="app-shell">
       {/* Global sticky branch filter header */}
-      <div className="branch-header">
-        <span className="branch-label">Branch</span>
-        <div className="branch-select-wrap">
-          <select
-            className="branch-select"
-            value={selectedBranch ?? ''}
-            onChange={e => setSelectedBranch(e.target.value || null)}
-          >
-            <option value="">All branches</option>
-            {branches.map(b => (
-              <option key={b} value={b}>{b}</option>
-            ))}
-          </select>
-          <ChevronDown size={12} className="branch-chevron" />
+      {(isManager || isSuperAdmin || isTechnician) && (
+        <div className="branch-header">
+          <span className="branch-label">ब्रांच</span>
+          <div className="branch-select-wrap">
+            <select
+              className="branch-select"
+              value={selectedBranch ?? ''}
+              onChange={e => setSelectedBranch(e.target.value || null)}
+            >
+              <option value="">सभी ब्रांच</option>
+              {branches.map(b => (
+                <option key={b} value={b}>{b}</option>
+              ))}
+            </select>
+            <ChevronDown size={12} className="branch-chevron" />
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="screen">
         <Outlet />

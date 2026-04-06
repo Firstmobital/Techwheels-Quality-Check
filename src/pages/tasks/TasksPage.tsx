@@ -1,16 +1,20 @@
 import { useEffect, useState, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { MapPin, ArrowRight, Truck, CheckCircle, RefreshCw } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/context/auth-context'
 import { useToast } from '@/components/ui/Toast'
 import type { TransferTask } from '@/types'
 
-interface TaskWithStock extends TransferTask {
+interface TaskWithStock extends Omit<TransferTask, 'task_type' | 'from_dealer'> {
+  task_type?: 'yard_transfer' | 'stock_transfer'
+  from_dealer?: string | null
   model?: string
   customer?: string
 }
 
 export default function TasksPage() {
+  const navigate = useNavigate()
   const { authUser } = useAuth()
   const { success, error: toastError } = useToast()
   const [tasks, setTasks] = useState<TaskWithStock[]>([])
@@ -26,7 +30,7 @@ export default function TasksPage() {
     try {
       const { data, error } = await supabase
         .from('transfer_tasks')
-        .select('*')
+        .select('*, task_type, from_dealer')
         .eq('driver_id', driverId)
         .in('status', ['assigned', 'picked_up'])
         .order('assigned_at', { ascending: false })
@@ -104,14 +108,28 @@ export default function TasksPage() {
   async function markArrived(task: TaskWithStock) {
     setUpdating(task.id)
     try {
+      const arrivedAt = new Date().toISOString()
       const { error } = await supabase
         .from('transfer_tasks')
         .update({
           status: 'arrived',
-          arrived_at: new Date().toISOString(),
+          arrived_at: arrivedAt,
         })
         .eq('id', task.id)
       if (error) throw error
+
+      const { error: movementError } = await supabase
+        .from('chassis_movements')
+        .insert({
+          event_type: 'transfer_arrived',
+          chassis_no: task.chassis_no,
+          from_location: task.from_location || task.from_dealer || null,
+          to_location: task.to_location,
+          performed_by: driverId ?? null,
+          event_at: arrivedAt,
+        })
+      if (movementError) throw movementError
+
       success('Marked as arrived!')
       void load()
     } catch {
@@ -155,10 +173,10 @@ export default function TasksPage() {
               style={{ color: 'var(--border)', margin: '0 auto 12px' }}
             />
             <p style={{ fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>
-              No active tasks
+              कोई काम नहीं
             </p>
             <p style={{ fontSize: 13, color: 'var(--muted)' }}>
-              You have no pending transfers right now
+              अभी कोई ट्रांसफर नहीं है
             </p>
           </div>
         ) : (
@@ -167,13 +185,26 @@ export default function TasksPage() {
               const isUpdating = updating === task.id
               const canPickup  = task.status === 'assigned'
               const canArrive  = task.status === 'picked_up'
+              const isStockTransfer = task.task_type === 'stock_transfer'
+              const fromDisplay = isStockTransfer && task.from_dealer
+                ? `डीलर: ${task.from_dealer}`
+                : task.from_location
 
               return (
                 <div key={task.id} className="task-card">
                   <div style={{ padding: '12px 14px' }}>
+                    <div style={{ marginBottom: 8 }}>
+                      <span className={`badge ${isStockTransfer ? 'badge-amber' : 'badge-blue'}`}>
+                        {isStockTransfer ? 'स्टॉक ट्रांसफर' : 'यार्ड ट्रांसफर'}
+                      </span>
+                    </div>
                     {/* Status row */}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                      <span className="mono" style={{ color: 'var(--accent)', fontSize: 13 }}>
+                      <span
+                        className="mono"
+                        style={{ color: 'var(--accent)', fontSize: 13, cursor: 'pointer', textDecoration: 'underline' }}
+                        onClick={() => navigate(`/history?chassis=${encodeURIComponent(task.chassis_no)}`)}
+                      >
                         {task.chassis_no}
                       </span>
                       <span
@@ -181,7 +212,7 @@ export default function TasksPage() {
                           task.status === 'assigned' ? 'badge-amber' : 'badge-blue'
                         }`}
                       >
-                        {task.status === 'assigned' ? 'Pickup pending' : 'In transit'}
+                        {task.status === 'assigned' ? 'पिकअप बाकी' : 'रास्ते में'}
                       </span>
                     </div>
 
@@ -201,7 +232,7 @@ export default function TasksPage() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                         <MapPin size={12} style={{ color: 'var(--red)', flexShrink: 0 }} />
-                        <span className="badge badge-gray">{task.from_location}</span>
+                        <span className="badge badge-gray">{fromDisplay}</span>
                       </span>
                       <ArrowRight size={14} style={{ color: 'var(--muted)', flexShrink: 0 }} />
                       <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -224,7 +255,7 @@ export default function TasksPage() {
                       ) : (
                         <Truck size={14} />
                       )}
-                      Mark Picked Up
+                      पिकअप मार्क करें
                     </button>
                     <button
                       className="task-action-btn"
@@ -237,7 +268,7 @@ export default function TasksPage() {
                       ) : (
                         <CheckCircle size={14} />
                       )}
-                      Mark Arrived
+                      पहुँची मार्क करें
                     </button>
                   </div>
                 </div>

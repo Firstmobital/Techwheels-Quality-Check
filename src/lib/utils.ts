@@ -68,11 +68,11 @@ export function getDeliveryStatus(
 
 export function deliveryStatusLabel(status: DeliveryDateStatus): string {
   switch (status) {
-    case 'today':     return 'Today'
-    case 'tomorrow':  return 'Tomorrow'
-    case 'overdue':   return 'Overdue'
-    case 'this_week': return 'This Week'
-    case 'future':    return 'Upcoming'
+    case 'today':     return 'आज'
+    case 'tomorrow':  return 'कल'
+    case 'overdue':   return 'देरी'
+    case 'this_week': return 'इस हफ्ते'
+    case 'future':    return 'आगामी'
     default:          return '—'
   }
 }
@@ -256,14 +256,14 @@ export function deriveCarStatus(
 // ── Car status display helpers ────────────────────────────────────────────────
 export function carStatusLabel(status: CarStatus): string {
   switch (status) {
-    case 'transfer_needed':   return 'Transfer Needed'
-    case 'transfer_assigned': return 'Driver Assigned'
-    case 'in_transit':        return 'In Transit'
-    case 'at_branch':         return 'At Branch'
-    case 'qc_pending':        return 'QC Pending'
-    case 'qc_approved':       return 'QC Approved'
-    case 'qc_rejected':       return 'QC Rejected'
-    case 'ready':             return 'Ready'
+    case 'transfer_needed':   return 'ट्रांसफर जरूरी'
+    case 'transfer_assigned': return 'ड्राइवर मिला'
+    case 'in_transit':        return 'रास्ते में'
+    case 'at_branch':         return 'ब्रांच पर'
+    case 'qc_pending':        return 'QC बाकी'
+    case 'qc_approved':       return 'QC पास'
+    case 'qc_rejected':       return 'QC फेल'
+    case 'ready':             return 'तैयार'
   }
 }
 
@@ -286,4 +286,66 @@ export function ageingClass(days: number | null): string {
   if (days <= 15) return 'text-emerald-600 bg-emerald-50'
   if (days <= 30) return 'text-amber-600 bg-amber-50'
   return 'text-red-600 bg-red-50'
+}
+
+export function faultSeverityLabel(severity: string): string {
+  switch (severity) {
+    case 'minor': return 'छोटी'
+    case 'major': return 'बड़ी'
+    case 'critical': return 'गंभीर'
+    default: return '—'
+  }
+}
+
+export function faultStatusLabel(status: string): string {
+  switch (status) {
+    case 'open': return 'खुली'
+    case 'in_progress': return 'काम जारी'
+    case 'resolved': return 'ठीक हो गई'
+    case 'verified': return 'जांची गई'
+    default: return '—'
+  }
+}
+
+export function concernCategoryLabel(category: string): string {
+  switch (category) {
+    case 'delivery_delay': return 'डिलीवरी देरी'
+    case 'vehicle_condition': return 'गाड़ी की हालत'
+    case 'documentation': return 'कागज़ात'
+    case 'yard_capacity': return 'यार्ड क्षमता'
+    case 'ev_charging': return 'EV चार्जिंग'
+    case 'vehicle_missing': return 'गाड़ी गायब'
+    case 'safety': return 'सुरक्षा'
+    case 'other': return 'अन्य'
+    default: return '—'
+  }
+}
+
+export function concernStatusLabel(status: string): string {
+  switch (status) {
+    case 'open': return 'खुली'
+    case 'seen': return 'देखी गई'
+    case 'resolved': return 'हल हुई'
+    case 'rejected': return 'खारिज'
+    default: return '—'
+  }
+}
+
+export function evChargingLabel(status: string): string {
+  switch (status) {
+    case 'na': return 'लागू नहीं'
+    case 'pending': return 'बाकी'
+    case 'charging': return 'चार्ज हो रही है'
+    case 'complete': return 'पूरी'
+    default: return '—'
+  }
+}
+
+export function pdiStatusLabel(status: string): string {
+  switch (status) {
+    case 'pending': return 'बाकी'
+    case 'passed': return 'पास'
+    case 'failed': return 'फेल'
+    default: return '—'
+  }
 }

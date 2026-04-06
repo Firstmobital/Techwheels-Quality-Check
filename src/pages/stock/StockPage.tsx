@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Search, X, RefreshCw, ChevronRight, CalendarDays, UserCheck } from 'lucide-react'
+import { Search, X, RefreshCw, ChevronRight, CalendarDays, UserCheck, History } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/context/auth-context'
 import { useToast } from '@/components/ui/Toast'
@@ -43,6 +44,7 @@ function StockSheet({
   onSaved: () => void
 }) {
   const { isManager, isSuperAdmin } = useAuth()
+  const navigate = useNavigate()
   const { success, error: toastError } = useToast()
   const supabase = createClient()
 
@@ -142,6 +144,27 @@ function StockSheet({
               <span className="badge badge-blue">→ {item.delivery_branch}</span>
             )}
           </div>
+          <button
+            type="button"
+            onClick={() => navigate(`/history?chassis=${encodeURIComponent(item.chassis_no)}`)}
+            style={{
+              marginTop: 8,
+              padding: 0,
+              border: 'none',
+              background: 'transparent',
+              color: 'var(--muted)',
+              fontSize: 12,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+            }}
+            onMouseEnter={e => { e.currentTarget.style.textDecoration = 'underline' }}
+            onMouseLeave={e => { e.currentTarget.style.textDecoration = 'none' }}
+          >
+            <History size={12} />
+            यात्रा देखें
+          </button>
         </div>
 
         <div style={{ padding: '16px' }}>
@@ -243,6 +266,7 @@ function StockSheet({
 // ── Stock Page ────────────────────────────────────────────────────────────────
 export default function StockPage() {
   const { authUser, isManager, isSuperAdmin } = useAuth()
+  const navigate = useNavigate()
   const [items, setItems] = useState<StockWithMeta[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -408,6 +432,30 @@ export default function StockPage() {
                   {item.current_location && (
                     <span style={{ fontSize: 11, color: 'var(--muted)' }}>{item.current_location}</span>
                   )}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      navigate(`/history?chassis=${encodeURIComponent(item.chassis_no)}`)
+                    }}
+                    style={{
+                      marginTop: 2,
+                      padding: 0,
+                      border: 'none',
+                      background: 'transparent',
+                      color: 'var(--muted)',
+                      fontSize: 12,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.textDecoration = 'underline' }}
+                    onMouseLeave={e => { e.currentTarget.style.textDecoration = 'none' }}
+                  >
+                    <History size={12} />
+                    यात्रा देखें
+                  </button>
                 </div>
               </div>
 

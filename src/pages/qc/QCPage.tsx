@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Search, X, Camera, ChevronDown, ChevronUp,
   Check, RefreshCw, MapPin,
@@ -25,18 +26,18 @@ import type {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const CHECKLIST_KEYS: { key: string; label: string }[] = [
-  { key: 'engine',       label: 'Engine' },
-  { key: 'ac',           label: 'Air Conditioning' },
-  { key: 'lights_front', label: 'Front Lights' },
-  { key: 'lights_rear',  label: 'Rear Lights' },
-  { key: 'tyres',        label: 'Tyres' },
-  { key: 'brakes',       label: 'Brakes' },
-  { key: 'body',         label: 'Body / Paint' },
-  { key: 'interior',     label: 'Interior' },
-  { key: 'fuel',         label: 'Fuel Level' },
-  { key: 'documents',    label: 'Documents' },
-  { key: 'horn',         label: 'Horn' },
-  { key: 'windshield',   label: 'Windshield' },
+  { key: 'engine',       label: 'इंजन' },
+  { key: 'ac',           label: 'AC' },
+  { key: 'lights_front', label: 'आगे की लाइट' },
+  { key: 'lights_rear',  label: 'पीछे की लाइट' },
+  { key: 'tyres',        label: 'टायर' },
+  { key: 'brakes',       label: 'ब्रेक' },
+  { key: 'body',         label: 'बॉडी / रंग' },
+  { key: 'interior',     label: 'अंदर की सीट' },
+  { key: 'fuel',         label: 'ईंधन स्तर' },
+  { key: 'documents',    label: 'कागज़ात' },
+  { key: 'horn',         label: 'हॉर्न' },
+  { key: 'windshield',   label: 'शीशा' },
 ]
 
 const PHOTO_LABELS = [
@@ -76,6 +77,7 @@ function QCSheet({
   onSaved: () => void
 }) {
   const { success, error: toastError } = useToast()
+  const navigate = useNavigate()
   const supabase = createClient()
 
   const [checks, setChecks]   = useState<CheckState>(initChecklist)
@@ -204,6 +206,55 @@ function QCSheet({
 
       if (saveErr) throw saveErr
 
+      const eventAt = new Date().toISOString()
+      const performedBy = authUser?.employee?.id ?? null
+      const fromLocation = item.current_location ?? item.delivery_branch ?? null
+      const toLocation = item.delivery_branch ?? null
+
+      const { error: movementErr } = await supabase
+        .from('chassis_movements')
+        .insert({
+          event_type: finalStatus === 'approved' ? 'qc_approved' : 'qc_rejected',
+          chassis_no: item.chassis_no,
+          from_location: fromLocation,
+          to_location: toLocation,
+          performed_by: performedBy,
+          notes: remarks.trim() || null,
+          event_at: eventAt,
+        })
+      if (movementErr) throw movementErr
+
+      if (finalStatus === 'rejected') {
+        const faultDescription = remarks.trim() || 'QC में खराबी पाई गई'
+
+        const { error: faultErr } = await supabase
+          .from('fault_tickets')
+          .insert({
+            chassis_no: item.chassis_no,
+            stage: 'delivery_qc',
+            raised_by: performedBy,
+            assigned_to: null,
+            severity: 'major',
+            description: faultDescription,
+            photo_urls: [],
+            status: 'open',
+          })
+        if (faultErr) throw faultErr
+
+        const { error: faultMovementErr } = await supabase
+          .from('chassis_movements')
+          .insert({
+            event_type: 'fault_raised',
+            chassis_no: item.chassis_no,
+            from_location: fromLocation,
+            to_location: toLocation,
+            performed_by: performedBy,
+            notes: faultDescription,
+            event_at: eventAt,
+          })
+        if (faultMovementErr) throw faultMovementErr
+      }
+
       if (item.booking_id) {
         await supabase
           .from('booking')
@@ -234,7 +285,11 @@ function QCSheet({
         <div style={{ padding: '14px 16px 0' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
             <div>
-              <span className="mono" style={{ color: 'var(--accent)', fontSize: 14 }}>
+              <span
+                className="mono"
+                style={{ color: 'var(--accent)', fontSize: 14, cursor: 'pointer', textDecoration: 'underline' }}
+                onClick={() => navigate(`/history?chassis=${encodeURIComponent(item.chassis_no)}`)}
+              >
                 {item.chassis_no}
               </span>
               <div style={{ fontSize: 16, fontWeight: 700, marginTop: 2 }}>
@@ -386,7 +441,7 @@ function QCSheet({
               style={{ flex: 1, opacity: canSubmit ? 1 : 0.45 }}
             >
               {saving ? <RefreshCw size={16} className="spin" /> : <Check size={16} />}
-              Approve
+              QC पास करें
             </button>
             <button
               className="big-btn big-btn-red"
@@ -395,7 +450,7 @@ function QCSheet({
               style={{ flex: 1, opacity: canSubmit ? 1 : 0.45 }}
             >
               {saving ? <RefreshCw size={16} className="spin" /> : <X size={16} />}
-              Reject
+              QC फेल करें
             </button>
           </div>
 
@@ -408,6 +463,7 @@ function QCSheet({
 
 // ── QC Page ───────────────────────────────────────────────────────────────────
 export default function QCPage() {
+  const navigate = useNavigate()
   const { authUser, isManager, isSuperAdmin } = useAuth()
   const { selectedBranch } = useBranch()
   const [items, setItems]       = useState<StockWithMeta[]>([])
@@ -536,9 +592,9 @@ export default function QCPage() {
       {/* Sub-tabs */}
       <div style={{ display: 'flex', background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
         {([
-          { key: 'pending',  label: 'Pending',  count: pendingItems.length,  color: 'var(--purple)', bg: '#EDE9FE' },
-          { key: 'done',     label: 'Done',     count: doneItems.length,     color: 'var(--green)',  bg: '#DCFCE7' },
-          { key: 'rejected', label: 'Rejected', count: rejectedItems.length, color: 'var(--red)',    bg: '#FEE2E2' },
+          { key: 'pending',  label: 'बाकी',  count: pendingItems.length,  color: 'var(--purple)', bg: '#EDE9FE' },
+          { key: 'done',     label: 'पूरी',   count: doneItems.length,     color: 'var(--green)',  bg: '#DCFCE7' },
+          { key: 'rejected', label: 'रद्द', count: rejectedItems.length, color: 'var(--red)',    bg: '#FEE2E2' },
         ] as { key: QCTab; label: string; count: number; color: string; bg: string }[]).map(t => (
           <button
             key={t.key}
@@ -612,7 +668,14 @@ export default function QCPage() {
             >
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <span className="mono" style={{ color: 'var(--accent)', display: 'block', marginBottom: 2 }}>
+                  <span
+                    className="mono"
+                    style={{ color: 'var(--accent)', display: 'block', marginBottom: 2, cursor: 'pointer', textDecoration: 'underline' }}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      navigate(`/history?chassis=${encodeURIComponent(item.chassis_no)}`)
+                    }}
+                  >
                     {item.chassis_no}
                   </span>
                   <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

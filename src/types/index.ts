@@ -1,6 +1,6 @@
-// ── Database row types ────────────────────────────────────────────────────────
+// Database row types
 
-export type RoleCode = 'PDIQCMGR' | 'DRIVER' | 'TECHNICIAN'
+export type RoleCode = 'PDIQCMGR' | 'DRIVER' | 'TECHNICIAN' | 'YARDMGR' | 'SALES'
 
 export interface Role {
   id: number
@@ -58,7 +58,7 @@ export interface MatchedStock {
 }
 
 export interface BookingRow {
-  id: string           // UUID — needed to store in car_qc_records.booking_id... wait no, we use crm_opty_id now
+  id: string // UUID; currently crm_opty_id mapped flow is used.
   crm_opty_id: string | null
   delivery_date: string | null
   delivery_time: string | null
@@ -68,7 +68,7 @@ export interface BookingRow {
 export interface QCRecord {
   id: string
   chassis_no: string
-  booking_id: string | null   // now text = crm_opty_id
+  booking_id: string | null // Stored as text crm_opty_id.
   inspector_id: number | null
   checklist: QCChecklistItem[]
   photo_urls: QCPhoto[]
@@ -91,9 +91,13 @@ export interface QCPhoto {
   path: string
 }
 
+export type TransferTaskType = 'yard_transfer' | 'stock_transfer'
+
 export interface TransferTask {
   id: string
   chassis_no: string
+  task_type: TransferTaskType
+  from_dealer: string | null
   driver_id: number
   from_location: string
   to_location: string
@@ -104,7 +108,112 @@ export interface TransferTask {
   notes: string | null
 }
 
-// ── Derived / app-level types ─────────────────────────────────────────────────
+export interface YardSlot {
+  id: string
+  yard_name: string
+  chassis_no: string
+  slot_no: string | null
+  intake_type: 'trolley' | 'stock_transfer'
+  from_dealer: string | null
+  ev_charging_status: 'na' | 'pending' | 'charging' | 'complete'
+  is_blocked: boolean
+  ready_for_pdi: boolean
+  arrived_at: string
+  notes: string | null
+  created_by: number | null
+}
+
+export type PDIStatus = 'pending' | 'passed' | 'failed'
+
+export interface PDIRecord {
+  id: string
+  chassis_no: string
+  technician_id: number | null
+  checklist: QCChecklistItem[]
+  photo_urls: QCPhoto[]
+  remarks: string | null
+  status: PDIStatus
+  attempt_no: number
+  checked_at: string | null
+  technician?: Pick<Employee, 'first_name' | 'last_name'>
+}
+
+export type FaultSeverity = 'minor' | 'major' | 'critical'
+export type FaultStatus = 'open' | 'in_progress' | 'resolved' | 'verified'
+export type FaultStage = 'pdi' | 'delivery_qc'
+
+export interface FaultTicket {
+  id: string
+  chassis_no: string
+  stage: FaultStage
+  raised_by: number | null
+  assigned_to: number | null
+  severity: FaultSeverity
+  description: string
+  photo_urls: QCPhoto[]
+  status: FaultStatus
+  resolution_notes: string | null
+  resolved_at: string | null
+  created_at: string
+  assigned_employee?: Pick<Employee, 'first_name' | 'last_name'>
+}
+
+export type MovementEventType =
+  | 'intake_trolley'
+  | 'intake_stock_transfer'
+  | 'pdi_passed'
+  | 'pdi_failed'
+  | 'transfer_assigned'
+  | 'transfer_picked_up'
+  | 'transfer_arrived'
+  | 'qc_approved'
+  | 'qc_rejected'
+  | 'fault_raised'
+  | 'fault_resolved'
+  | 'delivery_ready'
+
+export interface ChassisMovement {
+  id: string
+  chassis_no: string
+  event_type: MovementEventType
+  from_location: string | null
+  to_location: string | null
+  performed_by: number | null
+  notes: string | null
+  metadata: Record<string, unknown> | null
+  event_at: string
+  performer?: Pick<Employee, 'first_name' | 'last_name'>
+}
+
+export type ConcernCategory =
+  | 'delivery_delay'
+  | 'vehicle_condition'
+  | 'documentation'
+  | 'yard_capacity'
+  | 'ev_charging'
+  | 'vehicle_missing'
+  | 'safety'
+  | 'other'
+
+export type ConcernStatus = 'open' | 'seen' | 'resolved' | 'rejected'
+export type ConcernRoleType = 'sales' | 'yard_manager'
+
+export interface Concern {
+  id: string
+  raised_by: number
+  role_type: ConcernRoleType
+  chassis_no: string | null
+  category: ConcernCategory
+  description: string
+  status: ConcernStatus
+  manager_comment: string | null
+  resolved_by: number | null
+  resolved_at: string | null
+  created_at: string
+  raiser?: Pick<Employee, 'first_name' | 'last_name'>
+}
+
+// Derived and app-level types
 
 export type DeliveryDateStatus =
   | 'today'
@@ -126,8 +235,8 @@ export type CarStatus =
 
 export interface StockWithMeta extends MatchedStock {
   // from booking join
-  booking_uuid: string | null      // booking.id UUID — used for QC record save
-  booking_id: string | null        // crm_opty_id text — used for booking updates
+  booking_uuid: string | null // booking.id UUID used for QC record save
+  booking_id: string | null // crm_opty_id text used for booking updates
   delivery_date: string | null
   delivery_time: string | null
   // derived
@@ -136,7 +245,7 @@ export interface StockWithMeta extends MatchedStock {
   qc_record: QCRecord | null
   transfer: TransferTask | null
   car_status: CarStatus
-  delivery_branch: string | null   // resolved from sales_team → employees → locations
+  delivery_branch: string | null // resolved from sales_team -> employees -> locations
 }
 
 export interface AuthUser {

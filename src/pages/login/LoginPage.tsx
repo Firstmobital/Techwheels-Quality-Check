@@ -28,37 +28,37 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
       <div className="w-full max-w-sm bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
-        <h1 className="text-xl font-bold text-slate-900">Techwheels Login</h1>
-        <p className="text-sm text-slate-500 mt-1">Sign in to continue</p>
+        <h1 className="text-xl font-bold text-slate-900">टेकव्हील्स</h1>
+        <p className="text-sm text-slate-500 mt-1">डीलरशिप ऑपरेशन्स</p>
 
         <form onSubmit={handleSubmit} className="space-y-4 mt-6">
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Email</label>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">ईमेल</label>
             <input
               type="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm"
-              placeholder="you@company.com"
+              placeholder="अपना ईमेल डालें"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Password</label>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">पासवर्ड</label>
             <input
               type="password"
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm"
-              placeholder="********"
+              placeholder="पासवर्ड डालें"
             />
           </div>
 
           {error && (
             <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-              {error}
+              गलती: {error}
             </div>
           )}
 
@@ -67,7 +67,7 @@ export default function LoginPage() {
             disabled={loading}
             className="w-full px-3 py-2 rounded-lg bg-brand-600 text-white text-sm font-semibold disabled:opacity-60"
           >
-            {loading ? 'Signing in...' : 'Sign in'}
+            {loading ? 'लॉगिन हो रहा है...' : 'लॉगिन करें'}
           </button>
         </form>
       </div>

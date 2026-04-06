@@ -24,6 +24,8 @@ interface AuthContextValue {
   isManager: boolean
   isTechnician: boolean
   isDriver: boolean
+  isYardManager: boolean
+  isSales: boolean
   isSuperAdmin: boolean
   // Global branch filter
   selectedBranch: string | null
@@ -40,6 +42,8 @@ const AuthContext = createContext<AuthContextValue>({
   isManager: false,
   isTechnician: false,
   isDriver: false,
+  isYardManager: false,
+  isSales: false,
   isSuperAdmin: false,
   selectedBranch: null,
   setSelectedBranch: () => {},
@@ -172,6 +176,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isManager = isSuperAdmin || roleCode === 'PDIQCMGR'
   const isTechnician = !isSuperAdmin && roleCode === 'TECHNICIAN'
   const isDriver = !isSuperAdmin && roleCode === 'DRIVER'
+  const isYardManager = !isSuperAdmin && roleCode === 'YARDMGR'
+  const isSales = !isSuperAdmin && roleCode === 'SALES'
 
   const value = useMemo(
     () => ({
@@ -182,11 +188,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isManager,
       isTechnician,
       isDriver,
+      isYardManager,
+      isSales,
       isSuperAdmin,
       selectedBranch,
       setSelectedBranch,
     }),
-    [authUser, loading, isManager, isTechnician, isDriver, isSuperAdmin, selectedBranch, signIn, signOut]
+    [authUser, loading, isManager, isTechnician, isDriver, isYardManager, isSales, isSuperAdmin, selectedBranch, signIn, signOut]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
