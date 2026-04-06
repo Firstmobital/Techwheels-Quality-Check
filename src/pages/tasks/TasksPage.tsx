@@ -147,7 +147,7 @@ export default function TasksPage() {
       success('गाड़ी पहुँच गई!')
       void load()
     } catch {
-      toastError('Update failed — please try again')
+      toastError('अपडेट नहीं हुआ — दोबारा कोशिश करें')
     } finally {
       setUpdating(null)
     }
@@ -157,10 +157,10 @@ export default function TasksPage() {
     <div className="fade-in">
       <div className="page-header">
         <div>
-          <h1>My Tasks</h1>
+          <h1>मेरे काम</h1>
           {!loading && tasks.length > 0 && (
             <p className="subtitle">
-              {tasks.length} active transfer{tasks.length > 1 ? 's' : ''}
+              {tasks.length} active ट्रांसफर
             </p>
           )}
         </div>
@@ -177,7 +177,7 @@ export default function TasksPage() {
       <div style={{ paddingTop: 12 }}>
         {loading ? (
           <div style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-            Loading...
+            लोड हो रहा है...
           </div>
         ) : tasks.length === 0 ? (
           <div style={{ margin: '32px 16px', textAlign: 'center', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '32px 20px' }}>

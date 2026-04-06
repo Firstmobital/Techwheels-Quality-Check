@@ -274,8 +274,8 @@ function QCSheet({
 
       success(
         finalStatus === 'approved'
-          ? 'QC approved successfully!'
-          : 'QC rejected — car flagged for re-inspection',
+          ? 'QC पास हो गई!'
+          : 'QC फेल — दोबारा जांच जरूरी',
       )
       onSaved()
       onClose()
